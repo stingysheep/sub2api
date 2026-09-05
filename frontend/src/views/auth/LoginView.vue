@@ -24,14 +24,14 @@
             <input
               id="email"
               v-model="formData.email"
-              type="email"
+              :type="localShortcutEnabled ? 'text' : 'email'"
               required
               autofocus
               autocomplete="email"
               :disabled="authActionDisabled"
               class="input pl-11"
               :class="{ 'input-error': errors.email }"
-              :placeholder="t('auth.emailPlaceholder')"
+              :placeholder="localShortcutEnabled ? '1@ / 2@' : t('auth.emailPlaceholder')"
             />
           </div>
         </div>
@@ -329,6 +329,36 @@ const formData = reactive({
   password: ''
 })
 
+// Local preview only: production builds compile this switch as false, and the
+// runtime hostname guard prevents use outside loopback even in preview builds.
+const localShortcutBuildEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_LOCAL_LOGIN_SHORTCUTS === 'true'
+const localShortcutEnabled = computed(
+  () =>
+    localShortcutBuildEnabled &&
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+)
+
+function isLocalShortcutIdentifier(): boolean {
+  return localShortcutEnabled.value && ['1@', '2@'].includes(formData.email.trim())
+}
+
+function getLocalShortcut(): { email: string; password: string } | null {
+  if (!localShortcutEnabled.value) {
+    return null
+  }
+
+  const identifier = formData.email.trim()
+  if (identifier === '1@' && formData.password === '1') {
+    return { email: 'admin@preview.local', password: formData.password }
+  }
+  if (identifier === '2@' && formData.password === '2') {
+    return { email: 'user@preview.local', password: formData.password }
+  }
+  return null
+}
+
 const errors = reactive({
   email: '',
   password: '',
@@ -529,6 +559,14 @@ function validateForm(): boolean {
     return false
   }
 
+  if (isLocalShortcutIdentifier()) {
+    if (!getLocalShortcut()) {
+      errors.password = '本地快捷登录密码不正确'
+      return false
+    }
+    return true
+  }
+
   // Email validation
   if (!formData.email.trim()) {
     errors.email = t('auth.emailRequired')
@@ -567,24 +605,40 @@ async function handleLogin(): Promise<void> {
     return
   }
 
-  if (!(await acquireActionProof())) {
+  const localShortcut = getLocalShortcut()
+  if (!localShortcut && !(await acquireActionProof())) {
     return
   }
 
   isLoading.value = true
 
   try {
-    // Call auth store login（阿里云 captchaVerifyParam 复用 turnstile_token 字段）
-    const response = await authStore.login({
-      email: formData.email,
-      password: formData.password,
-      turnstile_token:
-        turnstileEnabled.value || aliyunCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_ticket: tencentCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_randstr: tencentCaptchaEnabled.value
-        ? tencentCaptchaRandstr.value
-        : undefined
-    })
+    // Local preview sessions are intentionally client-only. They let the UI
+    // be inspected when the backend is unavailable and are never accepted in
+    // production builds or on non-loopback hosts.
+    if (localShortcut) {
+      authStore.loginLocalPreview(localShortcut.email === 'admin@preview.local' ? 'admin' : 'user')
+      clearAllAffiliateReferralCodes()
+      appStore.showSuccess(t('auth.loginSuccess'))
+      const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
+      await router.push(redirectTo)
+      return
+    }
+
+    // Local aliases resolve to the two isolated preview accounts. Every other
+    // request continues through the normal email login path unchanged.
+    const response = await authStore.login(
+      localShortcut || {
+        email: formData.email,
+        password: formData.password,
+        turnstile_token:
+          turnstileEnabled.value || aliyunCaptchaEnabled.value ? turnstileToken.value : undefined,
+        tencent_captcha_ticket: tencentCaptchaEnabled.value ? turnstileToken.value : undefined,
+        tencent_captcha_randstr: tencentCaptchaEnabled.value
+          ? tencentCaptchaRandstr.value
+          : undefined
+      }
+    )
 
     // Check if 2FA is required
     if (isTotp2FARequired(response)) {

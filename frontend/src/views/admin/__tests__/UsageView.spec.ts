@@ -337,6 +337,55 @@ describe('admin UsageView native compaction filter', () => {
   })
 })
 
+describe('admin UsageView role scope and pagination', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    list.mockReset().mockResolvedValue({ items: [], total: 40, pages: 2 })
+    getStats.mockReset().mockResolvedValue({
+      total_requests: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cache_tokens: 0,
+      total_cache_creation_tokens: 0,
+      total_cache_read_tokens: 0,
+      total_tokens: 0,
+      total_cost: 0,
+      total_actual_cost: 0,
+      total_account_cost: 0,
+      average_duration_ms: 0,
+    })
+    getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
+    getModelStats.mockReset().mockResolvedValue({ models: [] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('applies the selected role to every summary chart and requests an exact page total', async () => {
+    const wrapper = mountRouteFilteredUsageView()
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    list.mockClear()
+    getStats.mockClear()
+    getModelStats.mockClear()
+    getSnapshotV2.mockClear()
+
+    ;(wrapper.vm as any).filters.user_role = 'user'
+    ;(wrapper.vm as any).applyFilters()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({ user_role: 'user', exact_total: false }),
+      expect.anything()
+    )
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ user_role: 'user' }))
+    expect(getModelStats).toHaveBeenCalledWith(expect.objectContaining({ user_role: 'user' }))
+    expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({ user_role: 'user' }))
+  })
+})
+
 describe('admin UsageView distribution metric toggles', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -672,12 +721,15 @@ describe('admin UsageView errors tab filter forwarding', () => {
     await tabs[1].trigger('click')
     await flushPromises()
 
-    expect(listErrorLogs).toHaveBeenCalledWith(expect.objectContaining({
-      view: 'all',
-      model: 'gpt-5.3-codex',
-      account_id: 7,
-      group_id: 3,
-    }))
+    expect(listErrorLogs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        view: 'all',
+        model: 'gpt-5.3-codex',
+        account_id: 7,
+        group_id: 3,
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
   })
 })
 

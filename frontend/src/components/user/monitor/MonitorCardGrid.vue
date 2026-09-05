@@ -31,24 +31,55 @@
       :description="t('channelStatus.empty.description')"
     />
 
-    <div
-      v-else
-      class="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-    >
-      <MonitorCard
-        v-for="item in items"
-        :key="item.id"
-        :item="item"
-        :window="window"
-        :availability-value="resolveAvailability(item)"
-        :countdown-seconds="countdownSeconds"
-        @click="emit('cardClick', item)"
-      />
+    <div v-else class="space-y-8">
+      <section
+        v-for="group in groupedItems"
+        :key="group.id"
+        class="space-y-3"
+        :data-testid="`monitor-user-group-${group.id}`"
+      >
+        <div class="flex items-center gap-3">
+          <span class="h-5 w-1 rounded-full bg-primary-500"></span>
+          <h2 class="text-base font-bold text-gray-900 dark:text-white">{{ group.name }}</h2>
+          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-300">{{ group.items.length }}</span>
+        </div>
+        <div class="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <MonitorCard
+            v-for="item in group.items"
+            :key="item.id"
+            :item="item"
+            :window="window"
+            :availability-value="resolveAvailability(item)"
+            :countdown-seconds="countdownSeconds"
+            @click="emit('cardClick', item)"
+          />
+        </div>
+      </section>
+
+      <section v-if="ungroupedItems.length" class="space-y-3" data-testid="monitor-user-ungrouped">
+        <div class="flex items-center gap-3">
+          <span class="h-5 w-1 rounded-full bg-gray-300 dark:bg-dark-600"></span>
+          <h2 class="text-base font-bold text-gray-900 dark:text-white">{{ t('admin.channelMonitor.organization.ungrouped') }}</h2>
+          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-300">{{ ungroupedItems.length }}</span>
+        </div>
+        <div class="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <MonitorCard
+            v-for="item in ungroupedItems"
+            :key="item.id"
+            :item="item"
+            :window="window"
+            :availability-value="resolveAvailability(item)"
+            :countdown-seconds="countdownSeconds"
+            @click="emit('cardClick', item)"
+          />
+        </div>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { UserMonitorView, UserMonitorDetail } from '@/api/channelMonitor'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -67,6 +98,41 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+type MonitorGroup = {
+  id: number
+  name: string
+  sortOrder: number
+  items: UserMonitorView[]
+}
+
+const sortItems = (items: UserMonitorView[]) => [...items].sort((a, b) =>
+  (a.monitor_sort_order ?? 0) - (b.monitor_sort_order ?? 0) || a.id - b.id,
+)
+
+const groupedItems = computed<MonitorGroup[]>(() => {
+  const groups = new Map<number, MonitorGroup>()
+  for (const item of props.items) {
+    if (item.monitor_group_id == null) continue
+    const id = item.monitor_group_id
+    const existing = groups.get(id)
+    if (existing) {
+      existing.items.push(item)
+      continue
+    }
+    groups.set(id, {
+      id,
+      name: item.monitor_group_name || t('admin.channelMonitor.organization.ungrouped'),
+      sortOrder: item.monitor_group_sort_order ?? 0,
+      items: [item],
+    })
+  }
+  return [...groups.values()]
+    .map(group => ({ ...group, items: sortItems(group.items) }))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+})
+
+const ungroupedItems = computed(() => sortItems(props.items.filter(item => item.monitor_group_id == null)))
 
 function resolveAvailability(item: UserMonitorView): number | null {
   if (props.window === '7d') {

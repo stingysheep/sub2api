@@ -5,6 +5,14 @@
         <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100"><span class="text-lg font-medium text-primary-700">{{ user.email.charAt(0).toUpperCase() }}</span></div>
         <div class="flex-1"><p class="font-medium text-gray-900 dark:text-gray-100">{{ user.email }}</p><p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.users.currentBalance') }}: ${{ formatBalance(user.balance) }}</p></div>
       </div>
+      <div v-if="operation === 'add'">
+        <label class="input-label">{{ t('admin.users.balanceSource') }}</label>
+        <select v-model="form.source" class="input">
+          <option value="free">{{ t('admin.users.freeBalance') }}</option>
+          <option value="paid">{{ t('admin.users.paidBalance') }}</option>
+        </select>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.users.balanceSourceHint') }}</p>
+      </div>
       <div>
         <label class="input-label">{{ operation === 'add' ? t('admin.users.depositAmount') : t('admin.users.withdrawAmount') }}</label>
         <div class="relative flex gap-2">
@@ -15,6 +23,13 @@
       <div><label class="input-label">{{ t('admin.users.notes') }}</label><textarea v-model="form.notes" rows="3" class="input"></textarea></div>
       <div v-if="form.amount > 0" class="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950"><div class="flex items-center justify-between text-sm"><span class="text-gray-700 dark:text-gray-300">{{ t('admin.users.newBalance') }}:</span><span class="font-bold text-gray-900 dark:text-gray-100">${{ formatBalance(calculateNewBalance()) }}</span></div></div>
     </form>
+    <ConfirmDialog
+      :show="showConfirm"
+      :title="t('admin.users.balanceConfirmTitle')"
+      :message="t('admin.users.balanceConfirmMessage', { amount: formatBalance(form.amount), source: form.source === 'paid' ? t('admin.users.paidBalance') : t('admin.users.freeBalance') })"
+      @confirm="confirmBalanceSubmit"
+      @cancel="showConfirm = false"
+    />
     <template #footer>
       <div class="flex justify-end gap-3">
         <button @click="$emit('close')" class="btn btn-secondary">{{ t('common.cancel') }}</button>
@@ -31,12 +46,13 @@ import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
 const props = defineProps<{ show: boolean, user: AdminUser | null, operation: 'add' | 'subtract' }>()
 const emit = defineEmits(['close', 'success']); const { t } = useI18n(); const appStore = useAppStore()
 
-const submitting = ref(false); const form = reactive({ amount: 0, notes: '' })
-watch(() => props.show, (v) => { if(v) { form.amount = 0; form.notes = '' } })
+const submitting = ref(false); const showConfirm = ref(false); const form = reactive({ amount: 0, notes: '', source: 'free' as 'free' | 'paid' })
+watch(() => props.show, (v) => { if(v) { form.amount = 0; form.notes = ''; form.source = 'free'; showConfirm.value = false } })
 
 // 格式化余额：显示完整精度，去除尾部多余的0
 const formatBalance = (value: number) => {
@@ -74,9 +90,18 @@ const handleBalanceSubmit = async () => {
     appStore.showError(t('admin.users.insufficientBalance'))
     return
   }
+  if (props.operation === 'add') {
+    showConfirm.value = true
+    return
+  }
+  await confirmBalanceSubmit()
+}
+const confirmBalanceSubmit = async () => {
+  if (!props.user) return
+  showConfirm.value = false
   submitting.value = true
   try {
-    await adminAPI.users.updateBalance(props.user.id, form.amount, props.operation, form.notes)
+    await adminAPI.users.updateBalance(props.user.id, form.amount, props.operation, form.notes, form.source)
     appStore.showSuccess(t('common.success')); emit('success'); emit('close')
   } catch (e: any) {
     console.error('Failed to update balance:', e)

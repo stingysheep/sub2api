@@ -354,6 +354,28 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
 		return false, nil
 	}
+	if usageLog != nil {
+		usageLog.FreeBalanceCost = result.FreeBalanceCost
+		usageLog.PaidBalanceCost = result.PaidBalanceCost
+		usageLog.UnfundedBalanceCost = result.UnfundedBalanceCost
+	}
+	if deps.affiliateService != nil && usageLog != nil && usageLog.BillingType == BillingTypeBalance && result.PaidBalanceCost > 0 && usageLog.ActualCost > 0 {
+		basis := usageLog.TotalCost
+		if usageLog.AccountStatsCost != nil {
+			basis = *usageLog.AccountStatsCost
+		}
+		accountRate := 1.0
+		if usageLog.AccountRateMultiplier != nil {
+			accountRate = *usageLog.AccountRateMultiplier
+		}
+		paidShare := result.PaidBalanceCost / usageLog.ActualCost
+		if paidShare > 1 {
+			paidShare = 1
+		}
+		if _, rebateErr := deps.affiliateService.AccrueInviteUsageRebate(billingCtx, usageLog.UserID, result.PaidBalanceCost, basis*accountRate*paidShare, usageLog.RequestID); rebateErr != nil {
+			logger.LegacyPrintf("service.gateway", "affiliate usage rebate failed: user=%d err=%v", usageLog.UserID, rebateErr)
+		}
+	}
 
 	if result.APIKeyQuotaExhausted {
 		if invalidator, ok := p.APIKeyService.(apiKeyAuthCacheInvalidator); ok && p.APIKey != nil && p.APIKey.Key != "" {
@@ -549,6 +571,7 @@ type billingDeps struct {
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	cfg                   *config.Config
+	affiliateService      *AffiliateService
 }
 
 func (s *GatewayService) billingDeps() *billingDeps {
@@ -561,6 +584,7 @@ func (s *GatewayService) billingDeps() *billingDeps {
 		balanceNotifyService:  s.balanceNotifyService,
 		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
 		cfg:                   s.cfg,
+		affiliateService:      s.affiliateService,
 	}
 }
 

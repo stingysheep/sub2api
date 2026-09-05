@@ -47,6 +47,14 @@ export const useAppStore = defineStore('app', () => {
   // Auto-incrementing ID for toasts
   let toastIdCounter = 0
 
+  // The Vite-only preview has no API server. Suppress repetitive network
+  // failure toasts there so the UI remains inspectable; production is never
+  // affected because the hostname and build flag are both checked.
+  const localPreviewRuntime =
+    (import.meta.env.DEV || import.meta.env.VITE_LOCAL_LOGIN_SHORTCUTS === 'true') &&
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+
   // ==================== Computed ====================
 
   const hasActiveToasts = computed(() => toasts.value.length > 0)
@@ -143,6 +151,12 @@ export const useAppStore = defineStore('app', () => {
    * @param duration - Auto-dismiss duration in ms (default: 5000)
    */
   function showError(message: string, duration: number = 5000): string {
+    if (
+      localPreviewRuntime &&
+      /(?:status code|请求失败|加载.*失败|failed to load|request failed)/i.test(message)
+    ) {
+      return ''
+    }
     return showToast('error', message, duration)
   }
 
@@ -342,6 +356,7 @@ export const useAppStore = defineStore('app', () => {
         site_name: siteName.value,
         site_logo: siteLogo.value,
         site_subtitle: '',
+        dashboard_notice: '',
         api_base_url: apiBaseUrl.value,
         contact_info: contactInfo.value,
         doc_url: docUrl.value,
@@ -376,7 +391,7 @@ export const useAppStore = defineStore('app', () => {
         plugin_management_enabled: false,
         risk_control_enabled: false,
         service_quota_enabled: false,
-        affiliate_enabled: false,
+        affiliate_enabled: true,
         allow_user_view_error_requests: false,
       })
     }

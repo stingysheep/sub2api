@@ -23,6 +23,7 @@ export default {
     latestVersion: '最新版本',
     upToDate: '已是最新版本',
     updateAvailable: '有新版本可用！',
+    updateBadge: '有更新',
     releaseNotes: '更新日志',
     noReleaseNotes: '暂无更新日志',
     viewUpdate: '查看更新',

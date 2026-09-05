@@ -47,6 +47,17 @@
         </div>
       </header>
 
+      <MonitorOrganizationPanel
+        :running-id="runningId"
+        :duplicating-ids="duplicatingIds"
+        @changed="reload"
+        @run="handleRunNow"
+        @toggle="toggleEnabled"
+        @duplicate="handleDuplicate"
+        @edit="openEditDialog"
+        @delete="handleDelete"
+      />
+
       <MonitorSettingsPanel v-if="adminMonitorTab === 'v2'" />
 
       <TablePageLayout v-else>
@@ -82,6 +93,11 @@
             <span class="ml-1 inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="checkModeBadgeClass(row.check_mode)">
               {{ checkModeLabel(row.check_mode) }}
             </span>
+          </template>
+
+          <template #cell-monitor_group_name="{ row }">
+            <span v-if="row.monitor_group_name" class="inline-flex max-w-48 truncate rounded-md bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :title="row.monitor_group_name">{{ row.monitor_group_name }}</span>
+            <span v-else class="text-xs text-gray-400">—</span>
           </template>
 
           <template #cell-primary_model="{ row }">
@@ -196,6 +212,7 @@ import MonitorTemplateManagerDialog from '@/components/admin/monitor/MonitorTemp
 import MonitorRunResultDialog from '@/components/admin/monitor/MonitorRunResultDialog.vue'
 import MonitorPrimaryModelCell from '@/components/admin/monitor/MonitorPrimaryModelCell.vue'
 import MonitorActionsCell from '@/components/admin/monitor/MonitorActionsCell.vue'
+import MonitorOrganizationPanel from '@/components/admin/monitor/MonitorOrganizationPanel.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import MonitorSettingsPanel from '@/features/channel-monitor-v2/MonitorSettingsPanel.vue'
@@ -237,6 +254,7 @@ let searchTimeout: ReturnType<typeof setTimeout> | null = null
 const columns = computed<Column[]>(() => [
   { key: 'name', label: t('admin.channelMonitor.columns.name'), sortable: false },
   { key: 'provider', label: t('admin.channelMonitor.columns.provider'), sortable: false },
+  { key: 'monitor_group_name', label: t('admin.channelMonitor.columns.monitorGroup'), sortable: false },
   { key: 'primary_model', label: t('admin.channelMonitor.columns.primaryModel'), sortable: false },
   { key: 'availability_7d', label: t('admin.channelMonitor.columns.availability7d'), sortable: false },
   { key: 'latency', label: t('admin.channelMonitor.columns.latency'), sortable: false },

@@ -50,6 +50,59 @@ func (s *adminServiceImpl) GetAccount(ctx context.Context, id int64) (*Account, 
 	return s.accountRepo.GetByID(ctx, id)
 }
 
+func (s *adminServiceImpl) AddAccountToGroup(ctx context.Context, accountID, groupID int64) error {
+	if accountID <= 0 || groupID <= 0 {
+		return infraerrors.BadRequest("INVALID_ACCOUNT_GROUP", "account and group IDs must be positive")
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	group, err := s.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	if account.Type == AccountTypeAPIKey && group.RequireOAuthOnly &&
+		(group.Platform == PlatformOpenAI || group.Platform == PlatformAntigravity ||
+			group.Platform == PlatformAnthropic || group.Platform == PlatformGemini ||
+			group.Platform == PlatformGrok) {
+		return fmt.Errorf("分组 [%s] 仅允许 OAuth 账号，apikey 类型账号无法加入", group.Name)
+	}
+	if err := s.checkMixedChannelRisk(ctx, accountID, account.Platform, []int64{groupID}); err != nil {
+		return err
+	}
+	repo, ok := s.accountRepo.(AccountGroupPriorityRepository)
+	if !ok {
+		return errors.New("account repository does not support group binding mutations")
+	}
+	return repo.AddToGroup(ctx, accountID, groupID, 1)
+}
+
+func (s *adminServiceImpl) UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) error {
+	if accountID <= 0 || groupID <= 0 {
+		return infraerrors.BadRequest("INVALID_ACCOUNT_GROUP", "account and group IDs must be positive")
+	}
+	if priority < 1 {
+		return infraerrors.BadRequest("INVALID_ACCOUNT_GROUP_PRIORITY", "group priority must be at least 1")
+	}
+	repo, ok := s.accountRepo.(AccountGroupPriorityRepository)
+	if !ok {
+		return errors.New("account repository does not support group priority mutations")
+	}
+	return repo.UpdateGroupPriority(ctx, accountID, groupID, priority)
+}
+
+func (s *adminServiceImpl) RemoveAccountFromGroup(ctx context.Context, accountID, groupID int64) error {
+	if accountID <= 0 || groupID <= 0 {
+		return infraerrors.BadRequest("INVALID_ACCOUNT_GROUP", "account and group IDs must be positive")
+	}
+	repo, ok := s.accountRepo.(AccountGroupPriorityRepository)
+	if !ok {
+		return errors.New("account repository does not support group binding mutations")
+	}
+	return repo.RemoveFromGroup(ctx, accountID, groupID)
+}
+
 func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([]*Account, error) {
 	if len(ids) == 0 {
 		return []*Account{}, nil
@@ -283,6 +336,9 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 		expiresAt = &unix
 	}
 	autoPauseOnExpired := source.AutoPauseOnExpired
+	// Duplicates start unschedulable and must not inherit or activate managed
+	// probe/sync state until an administrator reviews the copied credentials.
+	probeDisabled := false
 	groups, groupIDs := duplicateAccountGroups(source)
 	proxyID := source.ProxyID
 	if source.ProxyFallbackOriginID != nil {
@@ -304,6 +360,7 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 		GroupIDs:              groupIDs,
 		ExpiresAt:             expiresAt,
 		AutoPauseOnExpired:    &autoPauseOnExpired,
+		ProbeEnabled:          &probeDisabled,
 		SkipDefaultGroupBind:  true,
 		SkipMixedChannelCheck: true,
 	}
@@ -399,7 +456,9 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 // Grok media eligibility helpers live in account_grok_media_eligibility.go.
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
-	// Probe/session state is system-managed. New accounts always start with automatic refresh disabled.
+	// Probe/session state is system-managed. For supported API-key accounts, new
+	// accounts opt into upstream billing probe and rate sync by default. An
+	// explicit ProbeEnabled=false remains authoritative so callers can opt out.
 	delete(accountExtra, UpstreamBillingProbeEnabledExtraKey)
 	delete(accountExtra, UpstreamBillingRateSyncEnabledExtraKey)
 	delete(accountExtra, UpstreamBillingProbeExtraKey)
@@ -420,14 +479,23 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Status:      StatusActive,
 		Schedulable: true,
 	}
-	if input.ProbeEnabled != nil && *input.ProbeEnabled {
-		if !isUpstreamBillingProbeAccount(account) {
-			return nil, ErrUpstreamBillingProbeAccountInvalid
-		}
+	if isUpstreamBillingProbeAccount(account) {
 		if account.Extra == nil {
-			account.Extra = make(map[string]any)
+			account.Extra = make(map[string]any, 2)
 		}
-		account.Extra[UpstreamBillingProbeEnabledExtraKey] = true
+		probeEnabled := true
+		if input.ProbeEnabled != nil {
+			probeEnabled = *input.ProbeEnabled
+		}
+		if !probeEnabled {
+			account.Extra[UpstreamBillingProbeEnabledExtraKey] = false
+			account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = false
+		} else {
+			account.Extra[UpstreamBillingProbeEnabledExtraKey] = true
+			account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = true
+		}
+	} else if input.ProbeEnabled != nil && *input.ProbeEnabled {
+		return nil, ErrUpstreamBillingProbeAccountInvalid
 	}
 	// 预计算固定时间重置的下次重置时间
 	if account.Extra != nil {

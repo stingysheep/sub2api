@@ -340,14 +340,15 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder, l
 		// Code already created and redeemed — just mark completed
 		return s.markCompleted(ctx, o, lease, "RECHARGE_SUCCESS")
 	case redeemActionCreate:
-		rc := &RedeemCode{Code: o.RechargeCode, Type: RedeemTypeBalance, Value: o.Amount, Status: StatusUnused}
+		rc := &RedeemCode{Code: o.RechargeCode, Type: RedeemTypeBalance, Value: o.Amount, BalanceSource: BalanceSourcePaid, Status: StatusUnused}
 		if err := s.redeemService.CreateCode(ctx, rc); err != nil {
 			return fmt.Errorf("create redeem code: %w", err)
 		}
 	case redeemActionRedeem:
 		// Code exists but unused — skip creation, proceed to redeem
 	}
-	if _, err := s.redeemService.Redeem(ContextSkipRedeemAffiliate(ctx), o.UserID, o.RechargeCode); err != nil {
+	paidCtx := WithBalanceSource(ContextSkipRedeemAffiliate(ctx), BalanceSourcePaid)
+	if _, err := s.redeemService.Redeem(paidCtx, o.UserID, o.RechargeCode); err != nil {
 		return fmt.Errorf("redeem balance: %w", err)
 	}
 	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {

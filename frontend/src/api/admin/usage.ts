@@ -20,10 +20,33 @@ export interface AdminUsageStatsResponse {
   total_cost: number
   total_actual_cost: number
   total_account_cost: number
+  total_free_balance_cost: number
+  total_paid_balance_cost: number
+  total_unfunded_cost: number
+  total_free_upstream_cost: number
+  total_paid_upstream_cost: number
+  total_free_balance_issued: number
+  total_free_balance_consumed: number
   average_duration_ms: number
   endpoints?: EndpointStat[]
   upstream_endpoints?: EndpointStat[]
   endpoint_paths?: EndpointStat[]
+}
+
+export interface ProfitBreakdownItem {
+  group_id: number
+  group_name: string
+  requests: number
+  paid_revenue: number
+  upstream_cost: number
+  free_upstream_cost: number
+  paid_upstream_cost: number
+  profit: number
+}
+
+export interface ProfitBreakdownResponse {
+  groups: ProfitBreakdownItem[]
+  models: ProfitBreakdownItem[]
 }
 
 export interface SimpleUser {
@@ -82,6 +105,7 @@ export interface CreateUsageCleanupTaskRequest {
 
 export interface AdminUsageQueryParams extends UsageQueryParams {
   user_id?: number
+  user_role?: 'admin' | 'user'
   exact_total?: boolean
   billing_mode?: string
   upstream_model_mismatch?: boolean
@@ -118,14 +142,17 @@ export async function list(
  */
 export async function getStats(params: {
   user_id?: number
+  user_role?: 'admin' | 'user'
   api_key_id?: number
   account_id?: number
   group_id?: number
   model?: string
   request_type?: UsageRequestType
   stream?: boolean
+  billing_type?: number | null
   native_compaction_v2?: boolean | null
   upstream_model_mismatch?: boolean
+  account_cost_basis?: 'current_account_rate'
   period?: string
   start_date?: string
   end_date?: string
@@ -135,6 +162,11 @@ export async function getStats(params: {
   const { data } = await apiClient.get<AdminUsageStatsResponse>('/admin/usage/stats', {
     params
   })
+  return data
+}
+
+export async function getProfitBreakdown(params: { start_date: string; end_date: string; timezone?: string }): Promise<ProfitBreakdownResponse> {
+  const { data } = await apiClient.get<ProfitBreakdownResponse>('/admin/usage/profit-breakdown', { params })
   return data
 }
 
@@ -210,6 +242,7 @@ export async function cancelCleanupTask(taskId: number): Promise<{ id: number; s
 export const adminUsageAPI = {
   list,
   getStats,
+  getProfitBreakdown,
   searchUsers,
   searchApiKeys,
   listCleanupTasks,

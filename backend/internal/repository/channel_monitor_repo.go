@@ -69,9 +69,17 @@ func (r *channelMonitorRepository) Create(ctx context.Context, m *service.Channe
 	if err != nil {
 		return translatePersistenceError(err, service.ErrChannelMonitorNotFound, nil)
 	}
+	if err := persistMonitorOrganization(ctx, client, created.ID, m.MonitorGroupID, m.MonitorSortOrder); err != nil {
+		return translatePersistenceError(err, service.ErrChannelMonitorNotFound, nil)
+	}
 	m.ID = created.ID
 	m.CreatedAt = created.CreatedAt
 	m.UpdatedAt = created.UpdatedAt
+	m.MonitorGroupName = ""
+	m.MonitorGroupSortOrder = 0
+	if err := r.enrichMonitorOrganization(ctx, client, m); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -96,17 +104,26 @@ func (r *channelMonitorRepository) FindByDuplicateOperationID(ctx context.Contex
 	if err != nil {
 		return nil, fmt.Errorf("find channel monitor duplicate operation: %w", err)
 	}
-	return entToServiceMonitor(row), nil
+	monitor := entToServiceMonitor(row)
+	if err := r.enrichMonitorOrganization(ctx, client, monitor); err != nil {
+		return nil, err
+	}
+	return monitor, nil
 }
 
 func (r *channelMonitorRepository) GetByID(ctx context.Context, id int64) (*service.ChannelMonitor, error) {
-	row, err := r.client.ChannelMonitor.Query().
+	client := clientFromContext(ctx, r.client)
+	row, err := client.ChannelMonitor.Query().
 		Where(channelmonitor.IDEQ(id)).
 		Only(ctx)
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrChannelMonitorNotFound, nil)
 	}
-	return entToServiceMonitor(row), nil
+	m := entToServiceMonitor(row)
+	if err := r.enrichMonitorOrganization(ctx, client, m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (r *channelMonitorRepository) Update(ctx context.Context, m *service.ChannelMonitor) error {
@@ -146,7 +163,13 @@ func (r *channelMonitorRepository) Update(ctx context.Context, m *service.Channe
 	if err != nil {
 		return translatePersistenceError(err, service.ErrChannelMonitorNotFound, nil)
 	}
+	if err := persistMonitorOrganization(ctx, client, m.ID, m.MonitorGroupID, m.MonitorSortOrder); err != nil {
+		return translatePersistenceError(err, service.ErrChannelMonitorNotFound, nil)
+	}
 	m.UpdatedAt = updated.UpdatedAt
+	if err := r.enrichMonitorOrganization(ctx, client, m); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -159,7 +182,8 @@ func (r *channelMonitorRepository) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *channelMonitorRepository) List(ctx context.Context, params service.ChannelMonitorListParams) ([]*service.ChannelMonitor, int64, error) {
-	q := r.client.ChannelMonitor.Query()
+	client := clientFromContext(ctx, r.client)
+	q := client.ChannelMonitor.Query()
 	if params.Provider != "" {
 		q = q.Where(channelmonitor.ProviderEQ(channelmonitor.Provider(params.Provider)))
 	}
@@ -201,13 +225,210 @@ func (r *channelMonitorRepository) List(ctx context.Context, params service.Chan
 	for _, row := range rows {
 		out = append(out, entToServiceMonitor(row))
 	}
+	if err := r.enrichMonitorOrganizations(ctx, client, out); err != nil {
+		return nil, 0, err
+	}
 	return out, int64(total), nil
+}
+
+// ---------- 监控分组与排序 ----------
+
+func (r *channelMonitorRepository) ListGroups(ctx context.Context) ([]*service.ChannelMonitorGroup, error) {
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `
+		SELECT g.id, g.name, g.sort_order, g.created_by, g.created_at, g.updated_at,
+		       COUNT(cm.id)
+		FROM channel_monitor_groups g
+		LEFT JOIN channel_monitors cm ON cm.monitor_group_id = g.id
+		GROUP BY g.id, g.name, g.sort_order, g.created_by, g.created_at, g.updated_at
+		ORDER BY g.sort_order ASC, g.id ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list channel monitor groups: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]*service.ChannelMonitorGroup, 0)
+	for rows.Next() {
+		group := &service.ChannelMonitorGroup{}
+		if err := rows.Scan(&group.ID, &group.Name, &group.SortOrder, &group.CreatedBy, &group.CreatedAt, &group.UpdatedAt, &group.MonitorCount); err != nil {
+			return nil, fmt.Errorf("scan channel monitor group: %w", err)
+		}
+		out = append(out, group)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate channel monitor groups: %w", err)
+	}
+	return out, nil
+}
+
+func (r *channelMonitorRepository) GetGroupByID(ctx context.Context, id int64) (*service.ChannelMonitorGroup, error) {
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `
+		SELECT g.id, g.name, g.sort_order, g.created_by, g.created_at, g.updated_at, COUNT(cm.id)
+		FROM channel_monitor_groups g
+		LEFT JOIN channel_monitors cm ON cm.monitor_group_id = g.id
+		WHERE g.id = $1
+		GROUP BY g.id, g.name, g.sort_order, g.created_by, g.created_at, g.updated_at
+	`, id)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrChannelMonitorGroupNotFound, nil)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("read channel monitor group: %w", err)
+		}
+		return nil, service.ErrChannelMonitorGroupNotFound
+	}
+	group := &service.ChannelMonitorGroup{}
+	if err := rows.Scan(&group.ID, &group.Name, &group.SortOrder, &group.CreatedBy, &group.CreatedAt, &group.UpdatedAt, &group.MonitorCount); err != nil {
+		return nil, fmt.Errorf("scan channel monitor group: %w", err)
+	}
+	return group, nil
+}
+
+func (r *channelMonitorRepository) CreateGroup(ctx context.Context, group *service.ChannelMonitorGroup) error {
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `
+		INSERT INTO channel_monitor_groups (name, created_by)
+		VALUES ($1, $2)
+		RETURNING id, sort_order, created_at, updated_at
+	`, group.Name, group.CreatedBy)
+	if err != nil {
+		return fmt.Errorf("insert channel monitor group: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("read inserted channel monitor group: %w", err)
+		}
+		return sql.ErrNoRows
+	}
+	if err := rows.Scan(&group.ID, &group.SortOrder, &group.CreatedAt, &group.UpdatedAt); err != nil {
+		return fmt.Errorf("scan inserted channel monitor group: %w", err)
+	}
+	return nil
+}
+
+func (r *channelMonitorRepository) UpdateGroup(ctx context.Context, group *service.ChannelMonitorGroup) error {
+	client := clientFromContext(ctx, r.client)
+	result, err := client.ExecContext(ctx, `
+		UPDATE channel_monitor_groups
+		SET name = $1, updated_at = NOW()
+		WHERE id = $2
+	`, group.Name, group.ID)
+	if err != nil {
+		return fmt.Errorf("update channel monitor group: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected == 0 {
+		return service.ErrChannelMonitorGroupNotFound
+	}
+	updated, err := r.GetGroupByID(ctx, group.ID)
+	if err != nil {
+		return err
+	}
+	*group = *updated
+	return nil
+}
+
+func (r *channelMonitorRepository) DeleteGroup(ctx context.Context, id int64) error {
+	client := clientFromContext(ctx, r.client)
+	result, err := client.ExecContext(ctx, `DELETE FROM channel_monitor_groups WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete channel monitor group: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected == 0 {
+		return service.ErrChannelMonitorGroupNotFound
+	}
+	return nil
+}
+
+func (r *channelMonitorRepository) UpdateGroupSortOrder(ctx context.Context, updates []service.ChannelMonitorGroupSortOrderUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	client := clientFromContext(ctx, r.client)
+	byID := make(map[int64]int, len(updates))
+	ids := make([]int64, 0, len(updates))
+	for _, update := range updates {
+		if _, exists := byID[update.ID]; !exists {
+			ids = append(ids, update.ID)
+		}
+		byID[update.ID] = update.SortOrder
+	}
+	count, err := scanChannelMonitorCount(ctx, client, `SELECT COUNT(*) FROM channel_monitor_groups WHERE id = ANY($1)`, pq.Array(ids))
+	if err != nil {
+		return err
+	}
+	if count != len(ids) {
+		return service.ErrChannelMonitorGroupNotFound
+	}
+	values := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids)*2)
+	for i, id := range ids {
+		base := i*2 + 1
+		values = append(values, fmt.Sprintf("($%d::bigint, $%d::int)", base, base+1))
+		args = append(args, id, byID[id])
+	}
+	_, err = client.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE channel_monitor_groups AS g
+		SET sort_order = v.sort_order, updated_at = NOW()
+		FROM (VALUES %s) AS v(id, sort_order)
+		WHERE g.id = v.id
+	`, strings.Join(values, ",")), args...)
+	return err
+}
+
+func (r *channelMonitorRepository) UpdateMonitorSortOrder(ctx context.Context, updates []service.ChannelMonitorSortOrderUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	client := clientFromContext(ctx, r.client)
+	byID := make(map[int64]service.ChannelMonitorSortOrderUpdate, len(updates))
+	ids := make([]int64, 0, len(updates))
+	for _, update := range updates {
+		if _, exists := byID[update.ID]; !exists {
+			ids = append(ids, update.ID)
+		}
+		byID[update.ID] = update
+	}
+	count, err := scanChannelMonitorCount(ctx, client, `SELECT COUNT(*) FROM channel_monitors WHERE id = ANY($1)`, pq.Array(ids))
+	if err != nil {
+		return err
+	}
+	if count != len(ids) {
+		return service.ErrChannelMonitorNotFound
+	}
+	values := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids)*3)
+	for i, id := range ids {
+		update := byID[id]
+		base := i*3 + 1
+		values = append(values, fmt.Sprintf("($%d::bigint, $%d::bigint, $%d::int)", base, base+1, base+2))
+		var groupID any
+		if update.MonitorGroupID != nil {
+			groupID = *update.MonitorGroupID
+		}
+		args = append(args, id, groupID, update.MonitorSortOrder)
+	}
+	_, err = client.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE channel_monitors AS cm
+		SET monitor_group_id = v.monitor_group_id, monitor_sort_order = v.monitor_sort_order, updated_at = NOW()
+		FROM (VALUES %s) AS v(id, monitor_group_id, monitor_sort_order)
+		WHERE cm.id = v.id
+	`, strings.Join(values, ",")), args...)
+	return err
 }
 
 // ---------- 调度器辅助 ----------
 
 func (r *channelMonitorRepository) ListEnabled(ctx context.Context) ([]*service.ChannelMonitor, error) {
-	rows, err := r.client.ChannelMonitor.Query().
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.ChannelMonitor.Query().
 		Where(channelmonitor.EnabledEQ(true)).
 		All(ctx)
 	if err != nil {
@@ -216,6 +437,9 @@ func (r *channelMonitorRepository) ListEnabled(ctx context.Context) ([]*service.
 	out := make([]*service.ChannelMonitor, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, entToServiceMonitor(row))
+	}
+	if err := r.enrichMonitorOrganizations(ctx, client, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -754,6 +978,123 @@ func (r *channelMonitorRepository) UpdateAggregationWatermark(ctx context.Contex
 }
 
 // ---------- helpers ----------
+
+type monitorOrganization struct {
+	groupID        *int64
+	groupName      string
+	groupSortOrder int
+	monitorSort    int
+}
+
+func scanChannelMonitorCount(ctx context.Context, client *dbent.Client, query string, args ...any) (int, error) {
+	rows, err := client.QueryContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, sql.ErrNoRows
+	}
+	var count int
+	if err := rows.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func persistMonitorOrganization(ctx context.Context, client *dbent.Client, monitorID int64, groupID *int64, sortOrder int) error {
+	var groupValue any
+	if groupID != nil {
+		groupValue = *groupID
+	}
+	_, err := client.ExecContext(ctx, `
+		UPDATE channel_monitors
+		SET monitor_group_id = $1, monitor_sort_order = $2, updated_at = NOW()
+		WHERE id = $3
+	`, groupValue, sortOrder, monitorID)
+	return err
+}
+
+func (r *channelMonitorRepository) enrichMonitorOrganization(ctx context.Context, client *dbent.Client, monitor *service.ChannelMonitor) error {
+	if monitor == nil {
+		return nil
+	}
+	organizations, err := loadMonitorOrganizations(ctx, client, []int64{monitor.ID})
+	if err != nil {
+		return err
+	}
+	applyMonitorOrganization(monitor, organizations[monitor.ID])
+	return nil
+}
+
+func (r *channelMonitorRepository) enrichMonitorOrganizations(ctx context.Context, client *dbent.Client, monitors []*service.ChannelMonitor) error {
+	if len(monitors) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(monitors))
+	for _, monitor := range monitors {
+		if monitor != nil {
+			ids = append(ids, monitor.ID)
+		}
+	}
+	organizations, err := loadMonitorOrganizations(ctx, client, ids)
+	if err != nil {
+		return err
+	}
+	for _, monitor := range monitors {
+		applyMonitorOrganization(monitor, organizations[monitor.ID])
+	}
+	return nil
+}
+
+func loadMonitorOrganizations(ctx context.Context, client *dbent.Client, ids []int64) (map[int64]monitorOrganization, error) {
+	out := make(map[int64]monitorOrganization, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := client.QueryContext(ctx, `
+		SELECT cm.id, cm.monitor_group_id, COALESCE(g.name, ''), COALESCE(g.sort_order, 0), cm.monitor_sort_order
+		FROM channel_monitors cm
+		LEFT JOIN channel_monitor_groups g ON g.id = cm.monitor_group_id
+		WHERE cm.id = ANY($1)
+	`, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("load channel monitor organization: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id int64
+		var groupID sql.NullInt64
+		var groupName string
+		var groupSort, monitorSort int
+		if err := rows.Scan(&id, &groupID, &groupName, &groupSort, &monitorSort); err != nil {
+			return nil, fmt.Errorf("scan channel monitor organization: %w", err)
+		}
+		org := monitorOrganization{groupName: groupName, groupSortOrder: groupSort, monitorSort: monitorSort}
+		if groupID.Valid {
+			idCopy := groupID.Int64
+			org.groupID = &idCopy
+		}
+		out[id] = org
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate channel monitor organization: %w", err)
+	}
+	return out, nil
+}
+
+func applyMonitorOrganization(monitor *service.ChannelMonitor, org monitorOrganization) {
+	if monitor == nil {
+		return
+	}
+	monitor.MonitorGroupID = org.groupID
+	monitor.MonitorGroupName = org.groupName
+	monitor.MonitorGroupSortOrder = org.groupSortOrder
+	monitor.MonitorSortOrder = org.monitorSort
+}
 
 func entToServiceMonitor(row *dbent.ChannelMonitor) *service.ChannelMonitor {
 	if row == nil {

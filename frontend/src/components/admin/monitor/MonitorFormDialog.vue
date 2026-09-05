@@ -154,6 +154,18 @@
       </div>
 
       <div>
+        <label class="input-label">{{ t('admin.channelMonitor.form.monitorGroup') }}</label>
+        <Select
+          v-model="monitorGroupSelectValue"
+          :options="monitorGroupOptions"
+          :loading="monitorGroupsLoading"
+          :placeholder="t('admin.channelMonitor.form.monitorGroupPlaceholder')"
+          data-testid="monitor-group-select"
+        />
+        <p class="mt-1 text-xs text-gray-400">{{ t('admin.channelMonitor.form.monitorGroupHint') }}</p>
+      </div>
+
+      <div>
         <label class="input-label">{{ t('admin.channelMonitor.form.intervalSeconds') }} <span class="text-red-500">*</span></label>
         <input v-model.number="form.interval_seconds" type="number" min="15" max="3600" required class="input" />
         <p class="mt-1 text-xs text-gray-400">{{ t('admin.channelMonitor.form.intervalSecondsHint') }}</p>
@@ -240,6 +252,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { adminAPI } from '@/api/admin'
 import { keysAPI } from '@/api/keys'
 import { userGroupsAPI } from '@/api/groups'
+import { channelMonitorAPI } from '@/api/admin/channelMonitor'
 import type {
   BodyOverrideMode,
   ChannelMonitor,
@@ -248,6 +261,7 @@ import type {
   CheckMode,
   Provider,
   UpdateParams,
+  ChannelMonitorGroup,
 } from '@/api/admin/channelMonitor'
 import type { ChannelMonitorTemplate } from '@/api/admin/channelMonitorTemplate'
 import type { ApiKey } from '@/types'
@@ -325,6 +339,7 @@ interface MonitorForm {
   primary_model: string
   extra_models: string[]
   group_name: string
+  monitor_group_id: number | null
   interval_seconds: number
   jitter_seconds: number
   enabled: boolean
@@ -346,6 +361,7 @@ const form = reactive<MonitorForm>({
   primary_model: '',
   extra_models: [],
   group_name: '',
+  monitor_group_id: null,
   interval_seconds: systemDefaultInterval.value,
   jitter_seconds: 0,
   enabled: true,
@@ -367,6 +383,42 @@ let suppressFormWatchers = false
 // 可用模板列表（进入 dialog 时一次性拉取 cache；按 provider / api mode 过滤）。
 const templatesCache = ref<ChannelMonitorTemplate[]>([])
 const templatesLoading = ref(false)
+const monitorGroups = ref<ChannelMonitorGroup[]>([])
+const monitorGroupsLoading = ref(false)
+let monitorGroupsRequestSeq = 0
+
+const monitorGroupOptions = computed(() => [
+  { value: '', label: t('admin.channelMonitor.form.monitorGroupUngrouped') },
+  ...monitorGroups.value.map((group) => ({ value: String(group.id), label: group.name })),
+])
+
+const monitorGroupSelectValue = computed<string>({
+  get: () => form.monitor_group_id == null ? '' : String(form.monitor_group_id),
+  set: (raw: string) => {
+    if (raw === '') {
+      form.monitor_group_id = null
+      return
+    }
+    const id = Number(raw)
+    form.monitor_group_id = Number.isFinite(id) ? id : null
+  },
+})
+
+async function loadMonitorGroups() {
+  const seq = ++monitorGroupsRequestSeq
+  monitorGroupsLoading.value = true
+  try {
+    const response = await channelMonitorAPI.listGroups()
+    if (seq !== monitorGroupsRequestSeq) return
+    monitorGroups.value = [...(response.items || [])].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+  } catch (err) {
+    if (seq !== monitorGroupsRequestSeq) return
+    monitorGroups.value = []
+    console.warn('load monitor groups failed', err)
+  } finally {
+    if (seq === monitorGroupsRequestSeq) monitorGroupsLoading.value = false
+  }
+}
 
 const templateOptions = computed(() => {
   const items = templatesCache.value.filter((t) => {
@@ -384,8 +436,9 @@ async function loadTemplates() {
   if (templatesCache.value.length > 0) return
   templatesLoading.value = true
   try {
-    const { items } = await adminAPI.channelMonitorTemplate.list()
-    templatesCache.value = items
+    const response = await adminAPI.channelMonitorTemplate.list()
+    // 本地演示接口在没有模板时可能返回空 data；表单仍应可正常打开。
+    templatesCache.value = response?.items || []
   } catch (err: unknown) {
     // 模板拉取失败不阻塞监控表单，用户可以不选模板
     console.warn('load monitor templates failed', err)
@@ -729,6 +782,7 @@ function resetForm() {
   form.primary_model = ''
   form.extra_models = []
   form.group_name = ''
+  form.monitor_group_id = null
   form.interval_seconds = systemDefaultInterval.value
   form.jitter_seconds = 0
   form.enabled = true
@@ -751,6 +805,7 @@ function loadFromMonitor(m: ChannelMonitor) {
   form.primary_model = m.primary_model
   form.extra_models = [...(m.extra_models || [])]
   form.group_name = m.group_name || ''
+  form.monitor_group_id = m.monitor_group_id ?? null
   form.interval_seconds = m.interval_seconds || systemDefaultInterval.value
   form.jitter_seconds = m.jitter_seconds || 0
   form.enabled = m.enabled
@@ -768,6 +823,7 @@ watch(
   ([show, m]) => {
     if (!show) return
     void loadTemplates()
+    void loadMonitorGroups()
     if (m) loadFromMonitor(m)
     else resetForm()
   },
@@ -819,6 +875,7 @@ function buildPayload(): CreateParams {
     primary_model: usesProbePart.value ? form.primary_model.trim() : 'quota',
     extra_models: usesProbePart.value ? form.extra_models : [],
     group_name: form.group_name.trim(),
+    monitor_group_id: form.monitor_group_id,
     enabled: form.enabled,
     interval_seconds: form.interval_seconds,
     jitter_seconds: form.jitter_seconds || 0,

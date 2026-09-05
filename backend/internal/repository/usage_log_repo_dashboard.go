@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -83,7 +84,7 @@ func (r *usageLogRepository) GetDashboardStats(ctx context.Context) (*DashboardS
 	now := timezone.Now()
 	todayStart := timezone.Today()
 
-	if err := r.fillDashboardEntityStats(ctx, stats, todayStart, now); err != nil {
+	if err := r.fillDashboardEntityStats(ctx, stats, todayStart, now, ""); err != nil {
 		return nil, err
 	}
 	if err := r.fillDashboardUsageStatsAggregated(ctx, stats, todayStart, now); err != nil {
@@ -111,10 +112,10 @@ func (r *usageLogRepository) GetDashboardStatsWithRange(ctx context.Context, sta
 	now := timezone.Now()
 	todayStart := timezone.Today()
 
-	if err := r.fillDashboardEntityStats(ctx, stats, todayStart, now); err != nil {
+	if err := r.fillDashboardEntityStats(ctx, stats, todayStart, now, ""); err != nil {
 		return nil, err
 	}
-	if err := r.fillDashboardUsageStatsFromUsageLogs(ctx, stats, startUTC, endUTC, todayStart, now); err != nil {
+	if err := r.fillDashboardUsageStatsFromUsageLogs(ctx, stats, startUTC, endUTC, todayStart, now, ""); err != nil {
 		return nil, err
 	}
 
@@ -128,7 +129,28 @@ func (r *usageLogRepository) GetDashboardStatsWithRange(ctx context.Context, sta
 	return stats, nil
 }
 
-func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats *DashboardStats, todayUTC, now time.Time) error {
+// GetDashboardStatsWithUserRole returns dashboard counts and usage scoped to one user role.
+// It bypasses rollups because the aggregate tables do not carry a user-role dimension.
+func (r *usageLogRepository) GetDashboardStatsWithUserRole(ctx context.Context, role string) (*DashboardStats, error) {
+	stats := &DashboardStats{}
+	now := timezone.Now()
+	todayStart := timezone.Today()
+	if err := r.fillDashboardEntityStats(ctx, stats, todayStart, now, role); err != nil {
+		return nil, err
+	}
+	if err := r.fillDashboardUsageStatsFromUsageLogs(ctx, stats, time.Unix(0, 0).UTC(), now.UTC(), todayStart.UTC(), now, role); err != nil {
+		return nil, err
+	}
+	rpm, tpm, err := r.getPerformanceStats(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	stats.Rpm = rpm
+	stats.Tpm = tpm
+	return stats, nil
+}
+
+func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats *DashboardStats, todayUTC, now time.Time, userRole string) error {
 	userStatsQuery := `
 		SELECT
 			COUNT(*) as total_users,
@@ -136,11 +158,16 @@ func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats
 		FROM users
 		WHERE deleted_at IS NULL
 	`
+	userStatsArgs := []any{todayUTC}
+	if userRole != "" {
+		userStatsQuery = strings.Replace(userStatsQuery, "WHERE deleted_at IS NULL", "WHERE deleted_at IS NULL AND role = $2", 1)
+		userStatsArgs = append(userStatsArgs, userRole)
+	}
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
 		userStatsQuery,
-		[]any{todayUTC},
+		userStatsArgs,
 		&stats.TotalUsers,
 		&stats.TodayNewUsers,
 	); err != nil {
@@ -150,15 +177,21 @@ func (r *usageLogRepository) fillDashboardEntityStats(ctx context.Context, stats
 	apiKeyStatsQuery := `
 		SELECT
 			COUNT(*) as total_api_keys,
-			COUNT(CASE WHEN status = $1 THEN 1 END) as active_api_keys
-		FROM api_keys
-		WHERE deleted_at IS NULL
+			COUNT(CASE WHEN k.status = $1 THEN 1 END) as active_api_keys
+		FROM api_keys k
+		WHERE k.deleted_at IS NULL
 	`
+	apiKeyStatsArgs := []any{service.StatusActive}
+	if userRole != "" {
+		apiKeyStatsQuery = strings.Replace(apiKeyStatsQuery, "FROM api_keys k", "FROM api_keys k JOIN users u ON u.id = k.user_id", 1)
+		apiKeyStatsQuery = strings.Replace(apiKeyStatsQuery, "WHERE k.deleted_at IS NULL", "WHERE k.deleted_at IS NULL AND u.role = $2 AND u.deleted_at IS NULL", 1)
+		apiKeyStatsArgs = append(apiKeyStatsArgs, userRole)
+	}
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
 		apiKeyStatsQuery,
-		[]any{service.StatusActive},
+		apiKeyStatsArgs,
 		&stats.TotalAPIKeys,
 		&stats.ActiveAPIKeys,
 	); err != nil {
@@ -264,6 +297,23 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 	}
 	stats.TodayTokens = stats.TodayInputTokens + stats.TodayOutputTokens + stats.TodayCacheCreationTokens + stats.TodayCacheReadTokens
 
+	// Account rates on early usage rows were not always snapshotted reliably.
+	// Recalculate the orange dashboard cost with each account's current rate,
+	// while preserving account_stats_cost/total_cost as the existing price basis.
+	currentAccountCostQuery := `
+		SELECT
+			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(a.rate_multiplier, 1)), 0),
+			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(a.rate_multiplier, 1))
+				FILTER (WHERE ul.created_at >= $1 AND ul.created_at < $2), 0)
+		FROM usage_logs ul
+		LEFT JOIN accounts a ON a.id = ul.account_id
+	`
+	if err := scanSingleRow(ctx, r.sql, currentAccountCostQuery, []any{todayUTC, todayUTC.Add(24 * time.Hour)}, &stats.TotalAccountCost, &stats.TodayAccountCost); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "does not exist") {
+			return err
+		}
+	}
+
 	hourlyActiveQuery := `
 		SELECT active_users
 		FROM usage_dashboard_hourly
@@ -279,23 +329,24 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 	return nil
 }
 
-func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Context, stats *DashboardStats, startUTC, endUTC, todayUTC, now time.Time) error {
+func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Context, stats *DashboardStats, startUTC, endUTC, todayUTC, now time.Time, userRole string) error {
 	todayEnd := todayUTC.Add(24 * time.Hour)
 	combinedStatsQuery := `
 		WITH scoped AS (
 			SELECT
-				created_at,
-				input_tokens,
-				output_tokens,
-				cache_creation_tokens,
-				cache_read_tokens,
-				total_cost,
-				actual_cost,
-				COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1) AS account_cost,
-				COALESCE(duration_ms, 0) AS duration_ms
-			FROM usage_logs
-			WHERE created_at >= LEAST($1::timestamptz, $3::timestamptz)
-				AND created_at < GREATEST($2::timestamptz, $4::timestamptz)
+				ul.created_at,
+				ul.input_tokens,
+				ul.output_tokens,
+				ul.cache_creation_tokens,
+				ul.cache_read_tokens,
+				ul.total_cost,
+				ul.actual_cost,
+				COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(a.rate_multiplier, 1) AS account_cost,
+				COALESCE(ul.duration_ms, 0) AS duration_ms
+			FROM usage_logs ul
+			LEFT JOIN accounts a ON a.id = ul.account_id
+			WHERE ul.created_at >= LEAST($1::timestamptz, $3::timestamptz)
+				AND ul.created_at < GREATEST($2::timestamptz, $4::timestamptz)
 		)
 		SELECT
 			COUNT(*) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz) AS total_requests,
@@ -317,12 +368,22 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_account_cost
 		FROM scoped
 	`
+	usageScopeArgs := []any{startUTC, endUTC, todayUTC, todayEnd}
+	if userRole != "" {
+		combinedStatsQuery = strings.Replace(
+			combinedStatsQuery,
+			"AND ul.created_at < GREATEST($2::timestamptz, $4::timestamptz)",
+			"AND ul.created_at < GREATEST($2::timestamptz, $4::timestamptz) AND ul.user_id IN (SELECT id FROM users WHERE role = $5 AND deleted_at IS NULL)",
+			1,
+		)
+		usageScopeArgs = append(usageScopeArgs, userRole)
+	}
 	var totalDurationMs int64
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
 		combinedStatsQuery,
-		[]any{startUTC, endUTC, todayUTC, todayEnd},
+		usageScopeArgs,
 		&stats.TotalRequests,
 		&stats.TotalInputTokens,
 		&stats.TotalOutputTokens,
@@ -364,7 +425,17 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 			COUNT(DISTINCT CASE WHEN created_at >= $3::timestamptz AND created_at < $4::timestamptz THEN user_id END) AS hourly_active_users
 		FROM scoped
 	`
-	if err := scanSingleRow(ctx, r.sql, activeUsersQuery, []any{todayUTC, todayEnd, hourStart, hourEnd}, &stats.ActiveUsers, &stats.HourlyActiveUsers); err != nil {
+	activeUsersArgs := []any{todayUTC, todayEnd, hourStart, hourEnd}
+	if userRole != "" {
+		activeUsersQuery = strings.Replace(
+			activeUsersQuery,
+			"AND created_at < GREATEST($2::timestamptz, $4::timestamptz)",
+			"AND created_at < GREATEST($2::timestamptz, $4::timestamptz) AND user_id IN (SELECT id FROM users WHERE role = $5 AND deleted_at IS NULL)",
+			1,
+		)
+		activeUsersArgs = append(activeUsersArgs, userRole)
+	}
+	if err := scanSingleRow(ctx, r.sql, activeUsersQuery, activeUsersArgs, &stats.ActiveUsers, &stats.HourlyActiveUsers); err != nil {
 		return err
 	}
 

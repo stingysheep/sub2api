@@ -76,10 +76,26 @@ func parseOptionalBoolDashboardFilter(c *gin.Context, name string) (*bool, error
 	return &value, nil
 }
 
+func parseOptionalUserRoleDashboardFilter(c *gin.Context) (string, error) {
+	raw := strings.TrimSpace(c.Query("user_role"))
+	if raw == "" {
+		return "", nil
+	}
+	if raw != "admin" && raw != "user" {
+		return "", errors.New("invalid user_role, use admin or user")
+	}
+	return raw, nil
+}
+
 // GetStats handles getting dashboard statistics
 // GET /api/v1/admin/dashboard/stats
 func (h *DashboardHandler) GetStats(c *gin.Context) {
-	stats, err := h.dashboardService.GetDashboardStats(c.Request.Context())
+	userRole, err := parseOptionalUserRoleDashboardFilter(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	stats, err := h.dashboardService.GetDashboardStatsWithUserRole(c.Request.Context(), userRole)
 	if err != nil {
 		response.Error(c, 500, "Failed to get dashboard statistics")
 		return
@@ -272,8 +288,13 @@ func (h *DashboardHandler) GetUsageTrend(c *gin.Context) {
 		response.BadRequest(c, "Invalid upstream_model_mismatch value, use true or false")
 		return
 	}
+	userRole, err := parseOptionalUserRoleDashboardFilter(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
-	trend, hit, err := h.getUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, nativeCompactionV2, billingType, upstreamModelMismatch)
+	trend, hit, err := h.getUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, nativeCompactionV2, billingType, upstreamModelMismatch, userRole)
 	if err != nil {
 		response.Error(c, 500, "Failed to get usage trend")
 		return
@@ -364,8 +385,13 @@ func (h *DashboardHandler) GetModelStats(c *gin.Context) {
 		response.BadRequest(c, "Invalid upstream_model_mismatch value, use true or false")
 		return
 	}
+	userRole, err := parseOptionalUserRoleDashboardFilter(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
-	stats, hit, err := h.getModelStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, modelSource, requestType, stream, nativeCompactionV2, billingType, upstreamModelMismatch)
+	stats, hit, err := h.getModelStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, modelSource, requestType, stream, nativeCompactionV2, billingType, upstreamModelMismatch, userRole)
 	if err != nil {
 		response.Error(c, 500, "Failed to get model statistics")
 		return
@@ -446,8 +472,13 @@ func (h *DashboardHandler) GetGroupStats(c *gin.Context) {
 		response.BadRequest(c, "Invalid upstream_model_mismatch value, use true or false")
 		return
 	}
+	userRole, err := parseOptionalUserRoleDashboardFilter(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
-	stats, hit, err := h.getGroupStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, requestType, stream, nativeCompactionV2, billingType, upstreamModelMismatch)
+	stats, hit, err := h.getGroupStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, requestType, stream, nativeCompactionV2, billingType, upstreamModelMismatch, userRole)
 	if err != nil {
 		response.Error(c, 500, "Failed to get group statistics")
 		return
@@ -499,8 +530,13 @@ func (h *DashboardHandler) GetUserUsageTrend(c *gin.Context) {
 	if err != nil || limit <= 0 {
 		limit = 12
 	}
+	userRole, err := parseOptionalUserRoleDashboardFilter(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
-	trend, hit, err := h.getUserUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, limit)
+	trend, hit, err := h.getUserUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, limit, userRole)
 	if err != nil {
 		response.Error(c, 500, "Failed to get user usage trend")
 		return
@@ -540,15 +576,22 @@ func parseRankingLimit(raw string) int {
 func (h *DashboardHandler) GetUserSpendingRanking(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 	limit := parseRankingLimit(c.DefaultQuery("limit", "12"))
+	userRole, err := parseOptionalUserRoleDashboardFilter(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	keyRaw, _ := json.Marshal(struct {
 		Start string `json:"start"`
 		End   string `json:"end"`
 		Limit int    `json:"limit"`
+		Role  string `json:"user_role,omitempty"`
 	}{
 		Start: startTime.UTC().Format(time.RFC3339),
 		End:   endTime.UTC().Format(time.RFC3339),
 		Limit: limit,
+		Role:  userRole,
 	})
 	cacheKey := string(keyRaw)
 	if cached, ok := dashboardUsersRankingCache.Get(cacheKey); ok {
@@ -557,7 +600,7 @@ func (h *DashboardHandler) GetUserSpendingRanking(c *gin.Context) {
 		return
 	}
 
-	ranking, err := h.dashboardService.GetUserSpendingRanking(c.Request.Context(), startTime, endTime, limit)
+	ranking, err := h.dashboardService.GetUserSpendingRankingWithRole(c.Request.Context(), startTime, endTime, limit, userRole)
 	if err != nil {
 		response.Error(c, 500, "Failed to get user spending ranking")
 		return
@@ -671,6 +714,12 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 
 	dim := usagestats.UserBreakdownDimension{}
+	userRole, err := parseOptionalUserRoleDashboardFilter(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	dim.UserRole = userRole
 	if v := c.Query("group_id"); v != "" {
 		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
 			dim.GroupID = id

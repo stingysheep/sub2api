@@ -85,6 +85,9 @@
           <div v-if="hasActionsColumn" class="border-t border-gray-200 pt-3 dark:border-dark-700">
             <slot name="cell-actions" :row="row" :value="row['actions']" :expanded="actionsExpanded"></slot>
           </div>
+          <div v-if="$slots['expanded-row'] && isExpandedRow(row, index)" class="border-t border-gray-100 pt-3 dark:border-dark-700">
+            <slot name="expanded-row" :row="row" :index="index"></slot>
+          </div>
         </div>
       </div>
     </template>
@@ -207,19 +210,18 @@
                 :style="{ height: virtualPaddingTop + 'px', padding: 0, border: 'none' }">
             </td>
           </tr>
-          <tr
-            v-for="item in renderRows"
-            :key="resolveRowKey(item.row, item.index)"
-            :data-row-id="resolveRowKey(item.row, item.index)"
-            :data-index="item.index"
-            :ref="item.measure ? measureElement : undefined"
-            class="hover:bg-gray-50 dark:hover:bg-dark-800"
-            :class="{
-              'cursor-pointer': clickableRows,
-              'bg-primary-50/40 dark:bg-primary-900/10': selectable && isRowSelected(item.row, item.index)
-            }"
-            @click="clickableRows && emit('rowClick', item.row)"
-          >
+          <template v-for="item in renderRows" :key="resolveRowKey(item.row, item.index)">
+            <tr
+              :data-row-id="resolveRowKey(item.row, item.index)"
+              :data-index="item.index"
+              :ref="item.measure ? measureElement : undefined"
+              class="hover:bg-gray-50 dark:hover:bg-dark-800"
+              :class="{
+                'cursor-pointer': clickableRows,
+                'bg-primary-50/40 dark:bg-primary-900/10': selectable && isRowSelected(item.row, item.index)
+              }"
+              @click="clickableRows && emit('rowClick', item.row)"
+            >
             <td v-if="selectable" class="w-11 min-w-11 px-3 py-4 text-center">
               <input
                 type="checkbox"
@@ -250,7 +252,16 @@
                    : item.row[column.key] }}
               </slot>
             </td>
-          </tr>
+            </tr>
+            <tr
+              v-if="$slots['expanded-row'] && isExpandedRow(item.row, item.index)"
+              class="border-t-8 border-gray-50 dark:border-dark-950"
+            >
+              <td :colspan="tableColumnCount" class="p-0">
+                <slot name="expanded-row" :row="item.row" :index="item.index"></slot>
+              </td>
+            </tr>
+          </template>
           <tr v-if="virtualPaddingBottom > 0" aria-hidden="true">
             <td :colspan="tableColumnCount"
                 :style="{ height: virtualPaddingBottom + 'px', padding: 0, border: 'none' }">
@@ -471,6 +482,8 @@ interface Props {
   selectedKeys?: Array<string | number>
   /** Accessible label for a row selection checkbox. */
   selectionLabel?: string | ((row: any) => string)
+  /** Stable row keys whose expanded content should render directly below the row. */
+  expandedRowKeys?: Array<string | number>
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -481,7 +494,8 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortOrder: 'asc',
   serverSideSort: false,
   selectable: false,
-  selectedKeys: () => []
+  selectedKeys: () => [],
+  expandedRowKeys: () => []
 })
 
 const sortKey = ref<string>('')
@@ -633,6 +647,8 @@ const resolveStableRowKey = (row: any): string | number | undefined => {
 }
 
 const resolveRowKey = (row: any, index: number) => resolveStableRowKey(row) ?? index
+const isExpandedRow = (row: any, index: number) =>
+  props.expandedRowKeys.includes(resolveRowKey(row, index))
 
 const dataColumns = computed(() => props.columns.filter((column) => column.key !== 'actions'))
 const columnsSignature = computed(() =>

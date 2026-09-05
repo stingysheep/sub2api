@@ -15,6 +15,7 @@ type balanceUserRepoStub struct {
 	adjustErr error
 	// changes 记录每次原子余额变更，顺序与调用顺序一致。
 	changes []BalanceChange
+	sources []BalanceSource
 }
 
 func (s *balanceUserRepoStub) AdjustBalance(ctx context.Context, id int64, delta float64) (BalanceChange, error) {
@@ -22,6 +23,16 @@ func (s *balanceUserRepoStub) AdjustBalance(ctx context.Context, id int64, delta
 }
 
 func (s *balanceUserRepoStub) SetBalance(ctx context.Context, id int64, value float64) (BalanceChange, error) {
+	return s.apply(func(float64) float64 { return value })
+}
+
+func (s *balanceUserRepoStub) AdjustBalanceBySource(ctx context.Context, id int64, delta float64, source BalanceSource) (BalanceChange, error) {
+	s.sources = append(s.sources, source)
+	return s.apply(func(current float64) float64 { return current + delta })
+}
+
+func (s *balanceUserRepoStub) SetBalanceBySource(ctx context.Context, id int64, value float64, source BalanceSource) (BalanceChange, error) {
+	s.sources = append(s.sources, source)
 	return s.apply(func(float64) float64 { return value })
 }
 
@@ -127,6 +138,22 @@ func TestAdminService_UpdateUserBalance_UsesAtomicPrimitives(t *testing.T) {
 			require.Equal(t, tt.want.New, user.Balance)
 		})
 	}
+}
+
+func TestAdminService_UpdateUserBalanceWithSource_NormalizesAndPersistsSource(t *testing.T) {
+	repo := &balanceUserRepoStub{userRepoStub: &userRepoStub{user: &User{ID: 7, Balance: 10}}}
+	svc := &adminServiceImpl{
+		userRepo:       repo,
+		redeemCodeRepo: &balanceRedeemRepoStub{redeemRepoStub: &redeemRepoStub{}},
+	}
+
+	_, err := svc.UpdateUserBalanceWithSource(context.Background(), 7, 5, "add", "", BalanceSourcePaid)
+	require.NoError(t, err)
+	require.Equal(t, []BalanceSource{BalanceSourcePaid}, repo.sources)
+
+	_, err = svc.UpdateUserBalanceWithSource(context.Background(), 7, 2, "set", "", BalanceSource("invalid"))
+	require.NoError(t, err)
+	require.Equal(t, []BalanceSource{BalanceSourcePaid, BalanceSourceFree}, repo.sources)
 }
 
 func TestAdminService_UpdateUserBalance_RejectsNegativeResult(t *testing.T) {

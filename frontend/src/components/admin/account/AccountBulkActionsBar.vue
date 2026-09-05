@@ -50,10 +50,10 @@
         <button @click="$emit('probe-upstream-billing')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.probeUpstreamBilling') }}</button>
         <button @click="$emit('toggle-schedulable', true)" class="btn btn-success btn-sm">{{ t('admin.accounts.bulkActions.enableScheduling') }}</button>
         <button @click="$emit('toggle-schedulable', false)" class="btn btn-warning btn-sm">{{ t('admin.accounts.bulkActions.disableScheduling') }}</button>
-        <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
+        <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkEdit.title') }}</button>
       </template>
       <button @click="$emit('edit-filtered')" class="btn btn-primary btn-sm">
-        {{ t('admin.accounts.bulkEdit.submit') }}
+        {{ t('admin.accounts.bulkEdit.title') }}
       </button>
     </div>
   </div>

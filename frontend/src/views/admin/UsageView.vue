@@ -14,6 +14,12 @@
                 @change="onDateRangeChange"
               />
             </div>
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.userScope') }}:</span>
+              <div class="w-32">
+                <Select v-model="userRoleFilter" :options="userRoleOptions" data-testid="usage-user-role-filter" @change="onUserRoleChange" />
+              </div>
+            </div>
             <div class="ml-auto flex items-center gap-2">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.granularity') }}:</span>
               <div class="w-28">
@@ -83,7 +89,7 @@
           </button>
         </div>
 
-        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
+        <UsageFilters v-model="filters" ref="usageFiltersRef" flat :mode="activeTab" :show-user-role="false" class="border-b border-gray-100 dark:border-dark-700/50" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
           <template #after-reset>
             <div v-if="activeTab !== 'ranking'" class="relative" ref="columnDropdownRef">
               <button
@@ -229,10 +235,11 @@ const inboundEndpointStats = ref<EndpointStat[]>([])
 const upstreamEndpointStats = ref<EndpointStat[]>([])
 const endpointPathStats = ref<EndpointStat[]>([])
 const endpointStatsLoading = ref(false)
-let abortController: AbortController | null = null; let exportAbortController: AbortController | null = null
+let abortController: AbortController | null = null; let exportAbortController: AbortController | null = null; let errorAbortController: AbortController | null = null
 let chartReqSeq = 0
 let statsReqSeq = 0
 let modelStatsReqSeq = 0
+let errorReqSeq = 0
 const exportProgress = reactive({ show: false, progress: 0, current: 0, total: 0, estimatedTime: '' })
 const cleanupDialogVisible = ref(false)
 // Balance history modal state
@@ -241,6 +248,7 @@ const balanceHistoryUser = ref<AdminUser | null>(null)
 
 const breakdownFilters = computed(() => {
   const f: Record<string, any> = {}
+  if (filters.value.user_role) f.user_role = filters.value.user_role
   if (filters.value.user_id) f.user_id = filters.value.user_id
   if (filters.value.api_key_id) f.api_key_id = filters.value.api_key_id
   if (filters.value.account_id) f.account_id = filters.value.account_id
@@ -298,7 +306,24 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
 }
 const defaultRange = getLast24HoursRangeDates()
 const startDate = ref(defaultRange.start); const endDate = ref(defaultRange.end)
-const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, native_compaction_v2: null, billing_type: null, start_date: startDate.value, end_date: endDate.value })
+// v2 starts at all users; the old key was written with an incorrect admin-only default.
+const USER_ROLE_FILTER_KEY = 'admin-dashboard-user-role-v2'
+type UserRoleFilter = 'admin' | 'user' | ''
+const persistedUserRole = (() => {
+  try {
+    const saved = localStorage.getItem(USER_ROLE_FILTER_KEY)
+    return saved === 'admin' || saved === 'user' ? saved : ''
+  } catch {
+    return ''
+  }
+})()
+const userRoleFilter = ref<UserRoleFilter>(persistedUserRole)
+const userRoleOptions = computed(() => [
+  { value: '', label: t('admin.dashboard.userRoleAll') },
+  { value: 'user', label: t('admin.dashboard.userRoleUser') },
+  { value: 'admin', label: t('admin.dashboard.userRoleAdmin') },
+])
+const filters = ref<AdminUsageQueryParams>({ user_id: undefined, user_role: persistedUserRole || undefined, model: undefined, group_id: undefined, request_type: undefined, native_compaction_v2: null, billing_type: null, start_date: startDate.value, end_date: endDate.value })
 const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total: 0 })
 const sortState = reactive({
   sort_by: 'created_at',
@@ -332,9 +357,13 @@ const applyRouteQueryFilters = () => {
   filters.value = {
     ...filters.value,
     user_id: queryUserId,
+    user_role: getSingleQueryValue(route.query.user_role) === 'user' || getSingleQueryValue(route.query.user_role) === 'admin'
+      ? getSingleQueryValue(route.query.user_role) as 'admin' | 'user'
+      : filters.value.user_role,
     start_date: startDate.value,
     end_date: endDate.value
   }
+  userRoleFilter.value = filters.value.user_role || ''
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
 }
 
@@ -395,7 +424,10 @@ const loadLogs = async () => {
       buildUsageListParams(pagination.page, pagination.page_size, false),
       { signal: c.signal }
     )
-    if(!c.signal.aborted) { usageLogs.value = res.items; pagination.total = res.total }
+    if(!c.signal.aborted) {
+      usageLogs.value = Array.isArray(res?.items) ? res.items : []
+      pagination.total = Number(res?.total) || 0
+    }
   } catch (error: any) { if(error?.name !== 'AbortError') console.error('Failed to load usage logs:', error) } finally { if(abortController === c) loading.value = false }
 }
 const loadStats = async (force = false) => {
@@ -450,6 +482,7 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
       api_key_id: filters.value.api_key_id,
       account_id: filters.value.account_id,
       group_id: filters.value.group_id,
+      user_role: filters.value.user_role,
       request_type: requestType,
       stream: legacyStream === null ? undefined : legacyStream,
       native_compaction_v2: filters.value.native_compaction_v2,
@@ -501,6 +534,7 @@ const loadChartData = async () => {
       api_key_id: filters.value.api_key_id,
       account_id: filters.value.account_id,
       group_id: filters.value.group_id,
+      user_role: filters.value.user_role,
       request_type: requestType,
       stream: legacyStream === null ? undefined : legacyStream,
       native_compaction_v2: filters.value.native_compaction_v2,
@@ -531,6 +565,11 @@ const applyFilters = () => {
     errRows.value = []
   }
 }
+const onUserRoleChange = () => {
+  filters.value = { ...filters.value, user_role: userRoleFilter.value || undefined }
+  try { localStorage.setItem(USER_ROLE_FILTER_KEY, userRoleFilter.value) } catch { /* ignore storage errors */ }
+  applyFilters()
+}
 const refreshData = () => {
   invalidateModelStatsCache()
   loadLogs()
@@ -544,7 +583,9 @@ const resetFilters = () => {
   const range = getLast24HoursRangeDates()
   startDate.value = range.start
   endDate.value = range.end
-  filters.value = { start_date: startDate.value, end_date: endDate.value, request_type: undefined, native_compaction_v2: null, billing_type: null, billing_mode: undefined }
+  userRoleFilter.value = ''
+  filters.value = { start_date: startDate.value, end_date: endDate.value, user_role: undefined, request_type: undefined, native_compaction_v2: null, billing_type: null, billing_mode: undefined }
+  try { localStorage.setItem(USER_ROLE_FILTER_KEY, '') } catch { /* ignore storage errors */ }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
   applyFilters()
 }
@@ -816,6 +857,10 @@ const toRFC3339 = (d: string | undefined, endOfDay = false): string | undefined 
   d ? new Date(d + (endOfDay ? 'T23:59:59.999' : 'T00:00:00')).toISOString() : undefined
 
 const loadAdminErrors = async () => {
+  const seq = ++errorReqSeq
+  errorAbortController?.abort()
+  const controller = new AbortController()
+  errorAbortController = controller
   errLoading.value = true
   try {
     const resp = await listErrorLogs({
@@ -834,14 +879,19 @@ const loadAdminErrors = async () => {
       status_codes: filters.value.status_code != null ? String(filters.value.status_code) : undefined,
       sort_by: errSortBy.value,
       sort_order: errSortOrder.value,
-    })
+    }, { signal: controller.signal })
+    if (controller.signal.aborted || seq !== errorReqSeq) return
     errRows.value = resp.items
     errTotal.value = resp.total
   } catch (error) {
+    if (controller.signal.aborted || seq !== errorReqSeq) return
     console.error('Failed to load admin errors:', error)
     appStore.showError(t('usage.errors.failedToLoad'))
   } finally {
-    errLoading.value = false
+    if (seq === errorReqSeq) {
+      errLoading.value = false
+      if (errorAbortController === controller) errorAbortController = null
+    }
   }
 }
 
@@ -877,10 +927,19 @@ onMounted(() => {
   loadSavedErrColumns()
   document.addEventListener('click', handleColumnClickOutside)
 })
-onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
+onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); errorAbortController?.abort(); errorReqSeq += 1; document.removeEventListener('click', handleColumnClickOutside) })
 
 watch(modelDistributionSource, (source) => {
   void loadModelStats(source)
+})
+
+watch(() => filters.value.user_role, (role) => {
+  userRoleFilter.value = role || ''
+  try {
+    localStorage.setItem(USER_ROLE_FILTER_KEY, role || '')
+  } catch {
+    // Ignore storage errors; the current page still uses the selected role.
+  }
 })
 
 defineExpose({ requestedModelStats, refreshData })

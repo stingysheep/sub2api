@@ -514,16 +514,29 @@ func (s *adminServiceImpl) BatchUpdateLimits(ctx context.Context, userIDs []int6
 }
 
 func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error) {
+	return s.UpdateUserBalanceWithSource(ctx, userID, balance, operation, notes, BalanceSourceFree)
+}
+
+func (s *adminServiceImpl) UpdateUserBalanceWithSource(ctx context.Context, userID int64, balance float64, operation string, notes string, source BalanceSource) (*User, error) {
 	// 余额调整必须走原子接口：先读后整行写回会把并发的计费扣款覆盖掉。
+	source = NormalizeBalanceSource(source)
 	var (
 		change BalanceChange
 		err    error
 	)
 	switch operation {
 	case "set":
-		change, err = s.userRepo.SetBalance(ctx, userID, balance)
+		if sourceRepo, ok := s.userRepo.(BalanceSourceUserRepository); ok {
+			change, err = sourceRepo.SetBalanceBySource(ctx, userID, balance, source)
+		} else {
+			change, err = s.userRepo.SetBalance(ctx, userID, balance)
+		}
 	case "add":
-		change, err = s.userRepo.AdjustBalance(ctx, userID, balance)
+		if sourceRepo, ok := s.userRepo.(BalanceSourceUserRepository); ok {
+			change, err = sourceRepo.AdjustBalanceBySource(ctx, userID, balance, source)
+		} else {
+			change, err = s.userRepo.AdjustBalance(ctx, userID, balance)
+		}
 	case "subtract":
 		change, err = s.userRepo.AdjustBalance(ctx, userID, -balance)
 	default:
@@ -565,12 +578,13 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 		}
 
 		adjustmentRecord := &RedeemCode{
-			Code:   code,
-			Type:   AdjustmentTypeAdminBalance,
-			Value:  balanceDiff,
-			Status: StatusUsed,
-			UsedBy: &user.ID,
-			Notes:  notes,
+			Code:          code,
+			Type:          AdjustmentTypeAdminBalance,
+			Value:         balanceDiff,
+			BalanceSource: NormalizeBalanceSource(source),
+			Status:        StatusUsed,
+			UsedBy:        &user.ID,
+			Notes:         strings.TrimSpace(notes + " [balance_source=" + string(source) + "]"),
 		}
 		now := time.Now()
 		adjustmentRecord.UsedAt = &now
@@ -1279,11 +1293,12 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 			return nil, err
 		}
 		code := RedeemCode{
-			Code:      codeValue,
-			Type:      input.Type,
-			Value:     input.Value,
-			Status:    StatusUnused,
-			ExpiresAt: input.ExpiresAt,
+			Code:          codeValue,
+			Type:          input.Type,
+			Value:         input.Value,
+			BalanceSource: NormalizeBalanceSource(input.BalanceSource),
+			Status:        StatusUnused,
+			ExpiresAt:     input.ExpiresAt,
 		}
 		// 订阅类型专用字段
 		if input.Type == RedeemTypeSubscription {

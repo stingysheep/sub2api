@@ -25,6 +25,7 @@ import (
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -1774,6 +1775,27 @@ func (r *accountRepository) AddToGroup(ctx context.Context, accountID, groupID i
 	return nil
 }
 
+func (r *accountRepository) UpdateGroupPriority(ctx context.Context, accountID, groupID int64, priority int) error {
+	affected, err := r.client.AccountGroup.Update().
+		Where(
+			dbaccountgroup.AccountIDEQ(accountID),
+			dbaccountgroup.GroupIDEQ(groupID),
+		).
+		SetPriority(priority).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return infraerrors.NotFound("ACCOUNT_GROUP_NOT_FOUND", "account is not a member of this group")
+	}
+	payload := buildSchedulerGroupPayload([]int64{groupID})
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountGroupsChanged, &accountID, nil, payload); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue update group priority failed: account=%d group=%d err=%v", accountID, groupID, err)
+	}
+	return nil
+}
+
 func (r *accountRepository) RemoveFromGroup(ctx context.Context, accountID, groupID int64) error {
 	_, err := r.client.AccountGroup.Delete().
 		Where(
@@ -1809,9 +1831,13 @@ func (r *accountRepository) GetGroups(ctx context.Context, accountID int64) ([]s
 }
 
 func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
-	existingGroupIDs, err := r.loadAccountGroupIDs(ctx, accountID)
+	existingGroupPriorities, err := r.loadAccountGroupPriorities(ctx, accountID)
 	if err != nil {
 		return err
+	}
+	existingGroupIDs := make([]int64, 0, len(existingGroupPriorities))
+	for groupID := range existingGroupPriorities {
+		existingGroupIDs = append(existingGroupIDs, groupID)
 	}
 	// 使用事务保证删除旧绑定与创建新绑定的原子性
 	tx, err := r.client.Tx(ctx)
@@ -1840,11 +1866,15 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 	}
 
 	builders := make([]*dbent.AccountGroupCreate, 0, len(groupIDs))
-	for i, groupID := range groupIDs {
+	for _, groupID := range groupIDs {
+		priority := 1
+		if existingPriority, ok := existingGroupPriorities[groupID]; ok {
+			priority = existingPriority
+		}
 		builders = append(builders, txClient.AccountGroup.Create().
 			SetAccountID(accountID).
 			SetGroupID(groupID).
-			SetPriority(i+1),
+			SetPriority(priority),
 		)
 	}
 
@@ -3322,6 +3352,21 @@ func (r *accountRepository) loadAccountGroupIDs(ctx context.Context, accountID i
 		ids = append(ids, entry.GroupID)
 	}
 	return ids, nil
+}
+
+func (r *accountRepository) loadAccountGroupPriorities(ctx context.Context, accountID int64) (map[int64]int, error) {
+	entries, err := r.client.AccountGroup.
+		Query().
+		Where(dbaccountgroup.AccountIDEQ(accountID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	priorities := make(map[int64]int, len(entries))
+	for _, entry := range entries {
+		priorities[entry.GroupID] = entry.Priority
+	}
+	return priorities, nil
 }
 
 func mergeGroupIDs(a []int64, b []int64) []int64 {

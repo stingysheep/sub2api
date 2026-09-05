@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -179,12 +180,25 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	if cmd.BalanceCost > 0 {
-		newBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
+		newBalance, sufficient, freeCost, paidCost, unfundedCost, err := deductUsageBillingBalanceWithSource(ctx, tx, cmd.UserID, cmd.BalanceCost)
 		if err != nil {
 			return err
 		}
 		result.NewBalance = &newBalance
 		result.BalanceOverdrafted = !sufficient
+		result.FreeBalanceCost = freeCost
+		result.PaidBalanceCost = paidCost
+		result.UnfundedBalanceCost = unfundedCost
+		if cmd.RequestID != "" {
+			_, err = tx.ExecContext(ctx, `
+			INSERT INTO usage_balance_allocations (request_id, api_key_id, user_id, free_cost, paid_cost, unfunded_cost)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (request_id, api_key_id) DO NOTHING
+			`, cmd.RequestID, cmd.APIKeyID, cmd.UserID, freeCost, paidCost, unfundedCost)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	if cmd.APIKeyQuotaCost > 0 {
@@ -241,35 +255,39 @@ func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscrip
 }
 
 func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64) (float64, bool, error) {
-	var newBalance float64
-	err := tx.QueryRowContext(ctx, `
-		UPDATE users
-		SET balance = balance - $1,
-			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL AND balance >= $1
-		RETURNING balance
-	`, amount, userID).Scan(&newBalance)
-	if err == nil {
-		return newBalance, true, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, false, err
-	}
+	newBalance, sufficient, _, _, _, err := deductUsageBillingBalanceWithSource(ctx, tx, userID, amount)
+	return newBalance, sufficient, err
+}
 
-	err = tx.QueryRowContext(ctx, `
-		UPDATE users
-		SET balance = balance - $1,
-			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
-		RETURNING balance
-	`, amount, userID).Scan(&newBalance)
+func deductUsageBillingBalanceWithSource(ctx context.Context, tx *sql.Tx, userID int64, amount float64) (float64, bool, float64, float64, float64, error) {
+	var balance, freeBalance, paidBalance float64
+	err := tx.QueryRowContext(ctx, `
+		SELECT balance, COALESCE(free_balance, 0), COALESCE(paid_balance, 0)
+		FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+	`, userID).Scan(&balance, &freeBalance, &paidBalance)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, false, service.ErrUserNotFound
+		return 0, false, 0, 0, 0, service.ErrUserNotFound
 	}
 	if err != nil {
-		return 0, false, err
+		return 0, false, 0, 0, 0, err
 	}
-	return newBalance, false, nil
+	freeCost := math.Min(amount, math.Max(freeBalance, 0))
+	remaining := amount - freeCost
+	paidCost := math.Min(remaining, math.Max(paidBalance, 0))
+	unfundedCost := remaining - paidCost
+	newBalance := balance - amount
+	_, err = tx.ExecContext(ctx, `
+		UPDATE users
+		SET balance = $1,
+		    free_balance = GREATEST(COALESCE(free_balance, 0) - $2, 0),
+		    paid_balance = COALESCE(paid_balance, 0) - $3,
+		    updated_at = NOW()
+		WHERE id = $4 AND deleted_at IS NULL
+	`, newBalance, freeCost, paidCost, userID)
+	if err != nil {
+		return 0, false, 0, 0, 0, err
+	}
+	return newBalance, unfundedCost <= 0.00000001, freeCost, paidCost, unfundedCost, nil
 }
 
 func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {

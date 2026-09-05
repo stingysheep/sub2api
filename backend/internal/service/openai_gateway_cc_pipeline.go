@@ -183,9 +183,23 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	grokCacheIdentity string,
 ) (*http.Response, error) {
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+	var monitorGuard *openAIFirstOutputHeaderGuard
+	if IsChannelMonitorProbe(c) {
+		// The monitor timeout cancels only this account's upstream attempt. The
+		// parent handler context remains alive so its failover loop can select the
+		// next account in priority order.
+		upstreamCtx, monitorGuard = newOpenAIFirstOutputHeaderGuard(
+			upstreamCtx,
+			func() {},
+			time.Now().Add(channelMonitorAttemptTimeout),
+		)
+	}
 	upstreamReq, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, targetURL, bytes.NewReader(body))
 	releaseUpstreamCtx()
 	if err != nil {
+		if monitorGuard != nil {
+			monitorGuard.close()
+		}
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 	// 记录本次实际选择的协议端点，供错误日志和用量日志在没有
@@ -229,9 +243,23 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	attemptStarted := time.Now()
 	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
+	if monitorGuard != nil && monitorGuard.stopHeaderWait() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		monitorGuard.close()
+		return nil, newChannelMonitorAttemptTimeoutError(c, account, attemptStarted)
+	}
 	if err != nil {
+		if monitorGuard != nil {
+			monitorGuard.close()
+		}
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+	}
+	if monitorGuard != nil {
+		resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: monitorGuard.close}
 	}
 	return resp, nil
 }

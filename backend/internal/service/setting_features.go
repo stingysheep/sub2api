@@ -113,6 +113,20 @@ func (s *SettingService) GetAffiliateRebateRatePercent(ctx context.Context) floa
 	return clampAffiliateRebateRate(rate)
 }
 
+// GetAffiliateDisplayRebateRatePercent returns the presentation-only rate.
+// It intentionally has no effect on rebate settlement.
+func (s *SettingService) GetAffiliateDisplayRebateRatePercent(ctx context.Context) float64 {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateDisplayRebateRate)
+	if err != nil {
+		return s.GetAffiliateRebateRatePercent(ctx)
+	}
+	rate, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return s.GetAffiliateRebateRatePercent(ctx)
+	}
+	return clampAffiliateRebateRate(rate)
+}
+
 // GetAffiliateRebateFreezeHours 返回返利冻结期（小时）。
 // 返回 0 表示不冻结（向后兼容）。
 func (s *SettingService) GetAffiliateRebateFreezeHours(ctx context.Context) int {

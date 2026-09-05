@@ -1185,10 +1185,17 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			account, err := s.getSchedulableAccount(ctx, accountID)
 			if err == nil {
 				clearSticky := shouldClearStickySession(account, requestedModel)
+				recoveredStickyPreempted := s.shouldPreemptRecoveredStickyFromAccounts(ctx, OpenAIAccountScheduleRequest{
+					GroupID:            groupID,
+					Platform:           platform,
+					RequestedModel:     requestedModel,
+					RequireCompact:     requireCompact,
+					RequiredCapability: requiredCapability,
+				}, account, accounts)
 				if clearSticky {
 					_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 				}
-				if !clearSticky && isOpenAICompatibleAccountEligibleForRequest(ctx, account, platform, requestedModel, false, requiredCapability) {
+				if !clearSticky && !recoveredStickyPreempted && isOpenAICompatibleAccountEligibleForRequest(ctx, account, platform, requestedModel, false, requiredCapability) {
 					account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, groupID, platform, requestedModel, requireCompact, requiredCapability)
 					if account == nil {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
@@ -1499,6 +1506,51 @@ func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, grou
 		accounts = s.filterGrokFreeQuotaAccountsForOpenAI(ctx, accounts)
 	}
 	return accounts, nil
+}
+
+// scheduleAccountRecoveryCheck starts a deduplicated, non-billable recovery
+// observer after a failed upstream attempt.
+func (s *OpenAIGatewayService) scheduleAccountRecoveryCheck(accountID int64) {
+	if s != nil && s.recoveryCoordinator != nil {
+		s.recoveryCoordinator.schedule(accountID)
+	}
+}
+
+// ScheduleAccountRecoveryCheck starts a deduplicated, non-billable observer
+// for integrations that use the shared failover loop.
+func (s *OpenAIGatewayService) ScheduleAccountRecoveryCheck(_ context.Context, accountID int64) {
+	s.scheduleAccountRecoveryCheck(accountID)
+}
+
+// shouldPreemptRecoveredSticky reports whether a recovered account with a
+// better priority is available. It is evaluated only for sticky sessions.
+func (s *OpenAIGatewayService) shouldPreemptRecoveredSticky(ctx context.Context, req OpenAIAccountScheduleRequest, sticky *Account) bool {
+	if s == nil || sticky == nil || s.recoveryCoordinator == nil {
+		return false
+	}
+	accounts, err := s.listSchedulableAccounts(ctx, req.GroupID, req.Platform)
+	if err != nil {
+		return false
+	}
+	return s.shouldPreemptRecoveredStickyFromAccounts(ctx, req, sticky, accounts)
+}
+
+func (s *OpenAIGatewayService) shouldPreemptRecoveredStickyFromAccounts(ctx context.Context, req OpenAIAccountScheduleRequest, sticky *Account, accounts []Account) bool {
+	if s == nil || sticky == nil || s.recoveryCoordinator == nil {
+		return false
+	}
+	now := time.Now()
+	for i := range accounts {
+		candidate := &accounts[i]
+		if candidate.Priority >= sticky.Priority || !s.recoveryCoordinator.isRecovered(candidate.ID, now) {
+			continue
+		}
+		if !isOpenAICompatibleAccountEligibleForRequest(ctx, candidate, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {

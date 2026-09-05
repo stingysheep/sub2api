@@ -95,6 +95,7 @@ type UpdateBalanceRequest struct {
 	Balance   float64 `json:"balance" binding:"required,gt=0"`
 	Operation string  `json:"operation" binding:"required,oneof=set add subtract"`
 	Notes     string  `json:"notes"`
+	Source    string  `json:"source" binding:"omitempty,oneof=free paid"`
 }
 
 type BindUserAuthIdentityRequest struct {
@@ -182,6 +183,25 @@ func (h *UserHandler) List(c *gin.Context) {
 	}
 
 	response.Paginated(c, out, total, page, pageSize)
+}
+
+// GetPaidBalanceSummary handles the current paid-balance total and ranking.
+// GET /api/v1/admin/users/paid-balance-summary
+func (h *UserHandler) GetPaidBalanceSummary(c *gin.Context) {
+	reader, ok := h.adminService.(interface {
+		GetPaidBalanceSummary(context.Context, int) (*service.PaidBalanceSummary, error)
+	})
+	if !ok {
+		response.Error(c, 503, "paid balance summary service not available")
+		return
+	}
+
+	summary, err := reader.GetPaidBalanceSummary(c.Request.Context(), 10)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, summary)
 }
 
 // parseAttributeFilters extracts attribute filters from query params
@@ -408,7 +428,19 @@ func (h *UserHandler) UpdateBalance(c *gin.Context) {
 		Body:   req,
 	}
 	executeAdminIdempotentJSON(c, "admin.users.balance.update", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		user, execErr := h.adminService.UpdateUserBalance(ctx, userID, req.Balance, req.Operation, req.Notes)
+		source := service.BalanceSource(req.Source)
+		if source == "" {
+			source = service.BalanceSourceFree
+		}
+		var user *service.User
+		var execErr error
+		if sourceService, ok := h.adminService.(interface {
+			UpdateUserBalanceWithSource(context.Context, int64, float64, string, string, service.BalanceSource) (*service.User, error)
+		}); ok {
+			user, execErr = sourceService.UpdateUserBalanceWithSource(ctx, userID, req.Balance, req.Operation, req.Notes, source)
+		} else {
+			user, execErr = h.adminService.UpdateUserBalance(ctx, userID, req.Balance, req.Operation, req.Notes)
+		}
 		if execErr != nil {
 			return nil, execErr
 		}

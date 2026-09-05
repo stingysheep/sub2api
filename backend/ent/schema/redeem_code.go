@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
@@ -45,6 +46,15 @@ func (RedeemCode) Fields() []ent.Field {
 		field.Float("value").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),
+		field.String("balance_source").
+			MaxLen(10).
+			Validate(func(value string) error {
+				if value != "free" && value != "paid" {
+					return fmt.Errorf("balance_source must be free or paid")
+				}
+				return nil
+			}).
+			Default("free"),
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusUnused),

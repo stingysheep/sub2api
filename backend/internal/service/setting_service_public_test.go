@@ -139,6 +139,31 @@ func TestSettingService_ChannelMonitorShowQuotaFailsClosed(t *testing.T) {
 	}
 }
 
+func TestSettingService_ChannelMonitorDegradedThreshold(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want int
+	}{
+		{name: "missing uses default", raw: "", want: 15},
+		{name: "configured value", raw: "20", want: 20},
+		{name: "minimum clamp", raw: "-1", want: 15},
+		{name: "maximum clamp", raw: "99", want: 45},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values := map[string]string{}
+			if tt.raw != "" {
+				values[SettingKeyChannelMonitorDegradedThresholdSeconds] = tt.raw
+			}
+			runtime := NewSettingService(&settingPublicRepoStub{values: values}, &config.Config{}).
+				GetChannelMonitorRuntime(context.Background())
+			require.Equal(t, tt.want, runtime.DegradedThresholdSeconds)
+		})
+	}
+}
+
 func TestSettingService_GetPublicSettings_ExposesForceEmailOnThirdPartySignup(t *testing.T) {
 	repo := &settingPublicRepoStub{
 		values: map[string]string{

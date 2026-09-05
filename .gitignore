@@ -34,6 +34,7 @@ backend/.gocache/
 # ===================
 node_modules/
 frontend/node_modules/
+frontend/.pnpm-store/
 frontend/dist/
 *.local
 *.tsbuildinfo
@@ -157,3 +158,32 @@ output/
 .vite/
 # 本地闭源插件开发目录及构建产物不进入 Sub2API 仓库
 /plugins/
+# 本地发布包、备份快照和临时截图不进入源码基线
+/sub2api-codex-*.tar
+/backend-ent-before-regen-*.zip
+/tmp-*.png
+**/*.codex-bak-*
+/openspec/changes/*/source-freeze/*.tar.gz
+
+# Local-only production data snapshot. Never commit this file.
+tools/local-demo/production-snapshot.json
+
+# Local server-operations workspace and sensitive artifacts
+/SERVER_OPS.md
+/RUNBOOK.md
+/notes/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+secrets/
+credentials/
+*.sql
+!backend/migrations/236_redeem_code_balance_source.sql
+!backend/migrations/237_correct_user_41_paid_balance_source.sql
+*.dump
+*.backup
+*.bak-*
+logs/
+work/

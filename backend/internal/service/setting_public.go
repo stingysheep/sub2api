@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
@@ -183,6 +184,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeySiteName,
 		SettingKeySiteLogo,
 		SettingKeySiteSubtitle,
+		SettingKeyDashboardNotice,
 		SettingKeyAPIBaseURL,
 		SettingKeyContactInfo,
 		SettingKeyDocURL,
@@ -324,6 +326,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SiteName:                            s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:                            settings[SettingKeySiteLogo],
 		SiteSubtitle:                        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		DashboardNotice:                     settings[SettingKeyDashboardNotice],
 		APIBaseURL:                          settings[SettingKeyAPIBaseURL],
 		ContactInfo:                         settings[SettingKeyContactInfo],
 		DocURL:                              settings[SettingKeyDocURL],
@@ -418,12 +421,47 @@ func clampChannelMonitorInterval(v int) int {
 	return v
 }
 
+const (
+	channelMonitorDegradedThresholdMinSeconds = 1
+	channelMonitorDegradedThresholdMaxSeconds = 45
+)
+
+// parseChannelMonitorDegradedThreshold parses and clamps the admin-configurable
+// V1 latency threshold. Empty/invalid input falls back to the code default.
+func parseChannelMonitorDegradedThreshold(raw string) int {
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v <= 0 {
+		return int(monitorDegradedThreshold / time.Second)
+	}
+	if v < channelMonitorDegradedThresholdMinSeconds {
+		return channelMonitorDegradedThresholdMinSeconds
+	}
+	if v > channelMonitorDegradedThresholdMaxSeconds {
+		return channelMonitorDegradedThresholdMaxSeconds
+	}
+	return v
+}
+
+func clampChannelMonitorDegradedThreshold(v int) int {
+	if v <= 0 {
+		return 0
+	}
+	if v < channelMonitorDegradedThresholdMinSeconds {
+		return channelMonitorDegradedThresholdMinSeconds
+	}
+	if v > channelMonitorDegradedThresholdMaxSeconds {
+		return channelMonitorDegradedThresholdMaxSeconds
+	}
+	return v
+}
+
 // ChannelMonitorRuntime is the lightweight view of the channel monitor feature
 // consumed by the runner, V2 aggregator, and user-facing handlers.
 type ChannelMonitorRuntime struct {
-	Enabled                bool
-	Mode                   string // ChannelMonitorModeV1 or ChannelMonitorModeV2
-	DefaultIntervalSeconds int
+	Enabled                  bool
+	Mode                     string // ChannelMonitorModeV1 or ChannelMonitorModeV2
+	DefaultIntervalSeconds   int
+	DegradedThresholdSeconds int
 	// HideThroughput: when true, user-facing V2 APIs omit RPM/TPM scale signals.
 	HideThroughput bool
 	// ShowQuota: when true, user-facing monitor views keep the quota/balance
@@ -447,33 +485,37 @@ func (r ChannelMonitorRuntime) PassiveAggregationAllowed() bool {
 func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMonitorRuntime {
 	if s == nil || s.settingRepo == nil {
 		return ChannelMonitorRuntime{
-			Enabled:                true,
-			Mode:                   defaultChannelMonitorMode,
-			DefaultIntervalSeconds: channelMonitorIntervalFallback,
-			HideThroughput:         true,
+			Enabled:                  true,
+			Mode:                     defaultChannelMonitorMode,
+			DefaultIntervalSeconds:   channelMonitorIntervalFallback,
+			DegradedThresholdSeconds: int(monitorDegradedThreshold / time.Second),
+			HideThroughput:           true,
 		}
 	}
 	vals, err := s.settingRepo.GetMultiple(ctx, []string{
 		SettingKeyChannelMonitorEnabled,
 		SettingKeyChannelMonitorMode,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
+		SettingKeyChannelMonitorDegradedThresholdSeconds,
 		SettingKeyChannelMonitorHideThroughput,
 		SettingKeyChannelMonitorShowQuota,
 	})
 	if err != nil {
 		return ChannelMonitorRuntime{
-			Enabled:                true,
-			Mode:                   defaultChannelMonitorMode,
-			DefaultIntervalSeconds: channelMonitorIntervalFallback,
-			HideThroughput:         true,
+			Enabled:                  true,
+			Mode:                     defaultChannelMonitorMode,
+			DefaultIntervalSeconds:   channelMonitorIntervalFallback,
+			DegradedThresholdSeconds: int(monitorDegradedThreshold / time.Second),
+			HideThroughput:           true,
 		}
 	}
 	return ChannelMonitorRuntime{
-		Enabled:                !isFalseSettingValue(vals[SettingKeyChannelMonitorEnabled]),
-		Mode:                   normalizeChannelMonitorMode(vals[SettingKeyChannelMonitorMode]),
-		DefaultIntervalSeconds: parseChannelMonitorInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
-		HideThroughput:         !isFalseSettingValue(vals[SettingKeyChannelMonitorHideThroughput]),
-		ShowQuota:              vals[SettingKeyChannelMonitorShowQuota] == "true",
+		Enabled:                  !isFalseSettingValue(vals[SettingKeyChannelMonitorEnabled]),
+		Mode:                     normalizeChannelMonitorMode(vals[SettingKeyChannelMonitorMode]),
+		DefaultIntervalSeconds:   parseChannelMonitorInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
+		DegradedThresholdSeconds: parseChannelMonitorDegradedThreshold(vals[SettingKeyChannelMonitorDegradedThresholdSeconds]),
+		HideThroughput:           !isFalseSettingValue(vals[SettingKeyChannelMonitorHideThroughput]),
+		ShowQuota:                vals[SettingKeyChannelMonitorShowQuota] == "true",
 	}
 }
 
@@ -574,6 +616,7 @@ type PublicSettingsInjectionPayload struct {
 	SiteName                            string                   `json:"site_name"`
 	SiteLogo                            string                   `json:"site_logo"`
 	SiteSubtitle                        string                   `json:"site_subtitle"`
+	DashboardNotice                     string                   `json:"dashboard_notice"`
 	APIBaseURL                          string                   `json:"api_base_url"`
 	ContactInfo                         string                   `json:"contact_info"`
 	DocURL                              string                   `json:"doc_url"`
@@ -663,6 +706,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		SiteName:                            settings.SiteName,
 		SiteLogo:                            settings.SiteLogo,
 		SiteSubtitle:                        settings.SiteSubtitle,
+		DashboardNotice:                     settings.DashboardNotice,
 		APIBaseURL:                          settings.APIBaseURL,
 		ContactInfo:                         settings.ContactInfo,
 		DocURL:                              settings.DocURL,

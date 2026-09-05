@@ -152,6 +152,7 @@ type SystemSettings struct {
 	SiteName                    string
 	SiteLogo                    string
 	SiteSubtitle                string
+	DashboardNotice             string
 	APIBaseURL                  string
 	ContactInfo                 string
 	DocURL                      string
@@ -172,6 +173,7 @@ type SystemSettings struct {
 	CyberSessionBlockTTLSeconds  int
 	AffiliateEnabled             bool
 	AffiliateRebateRate          float64
+	AffiliateDisplayRebateRate   float64
 	AffiliateRebateFreezeHours   int
 	AffiliateRebateDurationDays  int
 	AffiliateRebatePerInviteeCap float64
@@ -197,11 +199,12 @@ type SystemSettings struct {
 	OpsMetricsIntervalSeconds    int
 
 	// Channel Monitor feature
-	ChannelMonitorEnabled                bool   `json:"channel_monitor_enabled"`
-	ChannelMonitorMode                   string `json:"channel_monitor_mode"`
-	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
-	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
-	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorEnabled                  bool   `json:"channel_monitor_enabled"`
+	ChannelMonitorMode                     string `json:"channel_monitor_mode"`
+	ChannelMonitorDefaultIntervalSeconds   int    `json:"channel_monitor_default_interval_seconds"`
+	ChannelMonitorDegradedThresholdSeconds int    `json:"channel_monitor_degraded_threshold_seconds"`
+	ChannelMonitorHideThroughput           bool   `json:"channel_monitor_hide_throughput"`
+	ChannelMonitorShowQuota                bool   `json:"channel_monitor_show_quota"`
 
 	// Grok model mapping policy (admin settings; empty mapping falls back to these).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`
@@ -343,6 +346,7 @@ type PublicSettings struct {
 	SiteName                            string
 	SiteLogo                            string
 	SiteSubtitle                        string
+	DashboardNotice                     string
 	APIBaseURL                          string
 	ContactInfo                         string
 	DocURL                              string

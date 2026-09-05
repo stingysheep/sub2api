@@ -171,7 +171,7 @@ async function submitApiKeyAccount(
     await selectButtonByText(wrapper, 'API Key')
   }
   await wrapper.get('form#create-account-form input[type="text"]').setValue(`${platform} account`)
-  await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+  await wrapper.get('[data-testid="create-account-api-key"]').setValue('test-api-key')
   if (enableLongContextBilling) {
     await wrapper.get('[data-testid="openai-long-context-billing-toggle"]').trigger('click')
   }
@@ -287,6 +287,49 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.images_url_to_b64_json).toBe(true)
+
+  it('creates one numbered account per API key and skips occupied names', async () => {
+    const wrapper = mount(CreateAccountModal, {
+      props: {
+        show: true,
+        proxies: [],
+        groups: [],
+        existingAccountNames: ['coco-gpt-007-1']
+      },
+      global: {
+        stubs: {
+          BaseDialog: BaseDialogStub,
+          OAuthAuthorizationFlow: OAuthAuthorizationFlowStub,
+          ConfirmDialog: true,
+          Select: true,
+          Icon: true,
+          PlatformIcon: true,
+          ProxySelector: true,
+          ProxyAdBanner: true,
+          GroupSelector: GroupSelectorStub,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          QuotaLimitCard: true,
+        },
+      },
+    })
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('coco-gpt-007')
+    await wrapper.get('[data-testid="create-account-api-key"]').setValue('key-a\nkey-b\nkey-c')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(3)
+    expect(createAccountMock.mock.calls.map(call => call[0]?.name)).toEqual([
+      'coco-gpt-007-2',
+      'coco-gpt-007-3',
+      'coco-gpt-007-4'
+    ])
+    expect(createAccountMock.mock.calls.map(call => call[0]?.credentials?.api_key)).toEqual([
+      'key-a',
+      'key-b',
+      'key-c'
+    ])
   })
 
   it('persists upstream model metadata after creating an account from preview', async () => {
@@ -294,7 +337,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('OpenCode account')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="create-account-api-key"]').setValue('test-api-key')
     await wrapper.get('[data-testid="model-whitelist-selector"]').trigger('click')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
@@ -307,7 +350,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="create-account-api-key"]').setValue('test-api-key')
     await wrapper.get('[data-testid="model-whitelist-selector"]').trigger('click')
     await flushPromises()
 
@@ -321,7 +364,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('Mapped account')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="create-account-api-key"]').setValue('test-api-key')
     await selectButtonByText(wrapper, 'admin.accounts.modelMapping')
     await selectButtonByText(wrapper, 'admin.accounts.addMapping')
     await wrapper.get('input[placeholder="admin.accounts.requestModel"]').setValue('public-glm')
@@ -335,7 +378,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(syncUpstreamModelsMock).toHaveBeenCalledWith(42)
   })
 
-  it('warns when post-create capability metadata remains incomplete', async () => {
+  it('does not warn when optional post-create capability metadata is incomplete', async () => {
     syncUpstreamModelsMock.mockResolvedValue({
       models: ['x-preview-f-free'],
       warnings: [{ code: 'upstream_model_metadata_incomplete', message: 'metadata incomplete' }],
@@ -344,12 +387,12 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('OpenCode account')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="create-account-api-key"]').setValue('test-api-key')
     await wrapper.get('[data-testid="model-whitelist-selector"]').trigger('click')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(showWarningMock).toHaveBeenCalledWith(
+    expect(showWarningMock).not.toHaveBeenCalledWith(
       'admin.accounts.syncUpstreamModelsMetadataIncomplete'
     )
   })
@@ -405,7 +448,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'Kimi')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('Kimi adaptive')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-kimi')
+    await wrapper.get('[data-testid="create-account-api-key"]').setValue('sk-kimi')
 
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
@@ -417,31 +460,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
       base_url: 'https://api.moonshot.cn/v1',
       api_base_urls: {
         chat_completions: 'https://api.moonshot.cn/v1',
-        anthropic: 'https://api.moonshot.cn/anthropic',
-        responses: 'https://api.moonshot.cn/v1'
-      }
-    })
-  })
-
-  it('submits adaptive Kimi Coding Plan Responses endpoint', async () => {
-    const wrapper = mountModal()
-    await selectButtonByText(wrapper, 'Kimi')
-    await selectButtonByText(wrapper, 'admin.accounts.cnProviders.accountMode.coding')
-    await wrapper.get('form#create-account-form input[type="text"]').setValue('Kimi coding')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-kimi-coding')
-
-    await wrapper.get('form#create-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(createAccountMock).toHaveBeenCalledTimes(1)
-    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
-      account_mode: 'coding',
-      api_protocol: 'adaptive',
-      base_url: 'https://api.kimi.com/coding/v1',
-      api_base_urls: {
-        chat_completions: 'https://api.kimi.com/coding/v1',
-        anthropic: 'https://api.kimi.com/coding',
-        responses: 'https://api.kimi.com/coding/v1'
+        anthropic: 'https://api.moonshot.cn/anthropic'
       }
     })
   })
@@ -452,7 +471,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await wrapper
       .get('[data-testid="cn-adaptive-base-url-chat_completions"]')
       .setValue('https://relay.example.com/v1')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-relay')
+    await wrapper.get('[data-testid="create-account-api-key"]').setValue('sk-relay')
 
     expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('syncCredentials')).toMatchObject({
       platform: 'kimi',

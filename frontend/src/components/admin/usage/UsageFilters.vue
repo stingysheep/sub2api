@@ -150,6 +150,12 @@
           <Select v-model="filters.upstream_model_mismatch" :options="upstreamModelMismatchOptions" @change="emitChange" />
         </div>
 
+        <!-- Admin-only ownership scope. The user-facing usage page does not use this component. -->
+        <div v-if="showUserRole && mode !== 'errors'" class="w-full sm:w-auto sm:min-w-[180px]">
+          <label class="input-label">{{ t('admin.usage.userRoleFilter') }}</label>
+          <Select v-model="filters.user_role" :options="userRoleOptions" @change="emitChange" />
+        </div>
+
         <!-- Error Phase Filter (errors only) -->
         <div v-if="mode === 'errors'" class="w-full sm:w-auto sm:min-w-[180px]">
           <label class="input-label">{{ t('admin.ops.errorLog.type') }}</label>
@@ -222,12 +228,15 @@ interface Props {
   mode?: 'usage' | 'errors' | 'ranking'
   /** 嵌入统一卡片内使用：去掉自身卡片外观 */
   flat?: boolean
+  /** 主页面已有统一的用户范围筛选时，隐藏这里的重复入口。 */
+  showUserRole?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showActions: true,
   mode: 'usage',
-  flat: false
+  flat: false,
+  showUserRole: true,
 })
 const emit = defineEmits([
   'update:modelValue',
@@ -289,6 +298,12 @@ const billingTypeOptions = ref<SelectOption[]>([
   { value: null, label: t('admin.usage.allBillingTypes') },
   { value: 0, label: t('admin.usage.billingTypeBalance') },
   { value: 1, label: t('admin.usage.billingTypeSubscription') }
+])
+
+const userRoleOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('admin.usage.userRoleAll') },
+  { value: 'admin', label: t('admin.usage.userRoleAdmin') },
+  { value: 'user', label: t('admin.usage.userRoleUser') },
 ])
 
 // 错误类型对应后端 phase 参数(与错误表"类型"徽章同语义)

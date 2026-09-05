@@ -231,16 +231,20 @@ func buildUserViewFromSummary(
 	timelineEntries []*ChannelMonitorHistoryEntry,
 ) *UserMonitorView {
 	view := &UserMonitorView{
-		ID:               m.ID,
-		Name:             m.Name,
-		Provider:         m.Provider,
-		GroupName:        m.GroupName,
-		PrimaryModel:     m.PrimaryModel,
-		PrimaryStatus:    summary.PrimaryStatus,
-		PrimaryLatencyMs: summary.PrimaryLatencyMs,
-		Availability7d:   summary.Availability7d,
-		ExtraModels:      summary.ExtraModels,
-		Timeline:         buildTimelinePoints(timelineEntries),
+		ID:                    m.ID,
+		Name:                  m.Name,
+		Provider:              m.Provider,
+		GroupName:             m.GroupName,
+		MonitorGroupID:        m.MonitorGroupID,
+		MonitorGroupName:      m.MonitorGroupName,
+		MonitorGroupSortOrder: m.MonitorGroupSortOrder,
+		MonitorSortOrder:      m.MonitorSortOrder,
+		PrimaryModel:          m.PrimaryModel,
+		PrimaryStatus:         summary.PrimaryStatus,
+		PrimaryLatencyMs:      summary.PrimaryLatencyMs,
+		Availability7d:        summary.Availability7d,
+		ExtraModels:           summary.ExtraModels,
+		Timeline:              buildTimelinePoints(timelineEntries),
 	}
 	if primaryLatest != nil {
 		view.PrimaryPingLatencyMs = primaryLatest.PingLatencyMs

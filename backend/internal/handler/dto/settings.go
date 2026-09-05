@@ -151,6 +151,7 @@ type SystemSettings struct {
 	SiteName                    string           `json:"site_name"`
 	SiteLogo                    string           `json:"site_logo"`
 	SiteSubtitle                string           `json:"site_subtitle"`
+	DashboardNotice             string           `json:"dashboard_notice"`
 	APIBaseURL                  string           `json:"api_base_url"`
 	ContactInfo                 string           `json:"contact_info"`
 	DocURL                      string           `json:"doc_url"`
@@ -167,6 +168,7 @@ type SystemSettings struct {
 	DefaultConcurrency           int                          `json:"default_concurrency"`
 	DefaultBalance               float64                      `json:"default_balance"`
 	AffiliateRebateRate          float64                      `json:"affiliate_rebate_rate"`
+	AffiliateDisplayRebateRate   float64                      `json:"affiliate_display_rebate_rate"`
 	AffiliateRebateFreezeHours   int                          `json:"affiliate_rebate_freeze_hours"`
 	AffiliateRebateDurationDays  int                          `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap float64                      `json:"affiliate_rebate_per_invitee_cap"`
@@ -302,11 +304,12 @@ type SystemSettings struct {
 	AccountQuotaNotifyEmails        []NotifyEmailEntry `json:"account_quota_notify_emails"`
 
 	// Channel Monitor feature switch
-	ChannelMonitorEnabled                bool   `json:"channel_monitor_enabled"`
-	ChannelMonitorMode                   string `json:"channel_monitor_mode"`
-	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
-	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
-	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorEnabled                  bool   `json:"channel_monitor_enabled"`
+	ChannelMonitorMode                     string `json:"channel_monitor_mode"`
+	ChannelMonitorDefaultIntervalSeconds   int    `json:"channel_monitor_default_interval_seconds"`
+	ChannelMonitorDegradedThresholdSeconds int    `json:"channel_monitor_degraded_threshold_seconds"`
+	ChannelMonitorHideThroughput           bool   `json:"channel_monitor_hide_throughput"`
+	ChannelMonitorShowQuota                bool   `json:"channel_monitor_show_quota"`
 
 	// Grok model mapping policy (admin settings; empty account mapping falls back to these).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`
@@ -378,6 +381,7 @@ type PublicSettings struct {
 	SiteName                            string                   `json:"site_name"`
 	SiteLogo                            string                   `json:"site_logo"`
 	SiteSubtitle                        string                   `json:"site_subtitle"`
+	DashboardNotice                     string                   `json:"dashboard_notice"`
 	APIBaseURL                          string                   `json:"api_base_url"`
 	ContactInfo                         string                   `json:"contact_info"`
 	DocURL                              string                   `json:"doc_url"`

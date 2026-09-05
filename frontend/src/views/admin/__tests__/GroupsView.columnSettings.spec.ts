@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import type { AdminGroup } from '@/types'
@@ -12,6 +13,11 @@ const {
   getCapacitySummary,
   getLiveCapability,
   listAccounts,
+  getUpstreamProviderProfiles,
+  getWebSearchEmulationConfig,
+  getSettings,
+  bulkUpdate,
+  batchTest,
   showError,
   showSuccess,
   isCurrentStep,
@@ -24,6 +30,11 @@ const {
   getCapacitySummary: vi.fn(),
   getLiveCapability: vi.fn(),
   listAccounts: vi.fn(),
+  getUpstreamProviderProfiles: vi.fn(),
+  getWebSearchEmulationConfig: vi.fn(),
+  getSettings: vi.fn(),
+  bulkUpdate: vi.fn(),
+  batchTest: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
   isCurrentStep: vi.fn(),
@@ -46,6 +57,13 @@ const messages: Record<string, string> = {
   'admin.groups.usageToday': 'Today',
   'admin.groups.usageYesterday': 'Yesterday',
   'admin.groups.usageTotal': 'Total',
+  'admin.groups.accounts.selectGroup': 'Select group {name}',
+  'admin.groups.accounts.testSelectedGroups': 'Test selected groups ({count})',
+  'admin.groups.accounts.testingGroups': 'Testing groups...',
+  'admin.groups.accounts.testSelectedGroupsEmpty': 'No testable accounts in the selected groups',
+  'admin.groups.accounts.testGroupsCompleted': 'Completed tests for {count} account(s) in selected groups',
+  'admin.groups.accounts.testPassed': 'Test passed',
+  'admin.groups.accounts.testFailed': 'Test failed',
 }
 
 vi.mock('@/api/admin', () => ({
@@ -64,6 +82,19 @@ vi.mock('@/api/admin', () => ({
     },
     accounts: {
       list: listAccounts,
+      addToGroup: vi.fn(),
+      removeFromGroup: vi.fn(),
+      update: vi.fn(),
+      bulkUpdate,
+      batchTest,
+    },
+    settings: {
+      getUpstreamProviderProfiles,
+      getWebSearchEmulationConfig,
+      getSettings,
+    },
+    tlsFingerprintProfiles: {
+      list: vi.fn().mockResolvedValue([]),
     },
   },
 }))
@@ -154,6 +185,9 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
       <div data-test="rows">{{ data.map((row) => row.name).join(',') }}</div>
+      <div v-for="row in data" :key="row.id" data-test="name-cell">
+        <slot name="cell-name" :row="row" :value="row.name" />
+      </div>
       <div v-if="data.length" data-test="usage-cell">
         <slot name="cell-usage" :row="data[0]" />
       </div>
@@ -229,6 +263,7 @@ const clickColumnToggle = async (wrapper: ReturnType<typeof mount>, label: strin
 
 describe('admin GroupsView column settings', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     localStorage.clear()
 
     listGroups.mockReset()
@@ -237,6 +272,11 @@ describe('admin GroupsView column settings', () => {
     getUsageSummary.mockReset()
     getCapacitySummary.mockReset()
     listAccounts.mockReset()
+    getUpstreamProviderProfiles.mockReset()
+    getWebSearchEmulationConfig.mockReset()
+    getSettings.mockReset()
+    bulkUpdate.mockReset()
+    batchTest.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
     isCurrentStep.mockReset()
@@ -255,6 +295,9 @@ describe('admin GroupsView column settings', () => {
     getCapacitySummary.mockResolvedValue([])
     getLiveCapability.mockResolvedValue({ supported: false })
     listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
+    getUpstreamProviderProfiles.mockResolvedValue([])
+    getWebSearchEmulationConfig.mockResolvedValue({ enabled: false })
+    getSettings.mockResolvedValue({ account_quota_notify_enabled: false })
     isCurrentStep.mockReturnValue(false)
   })
 
@@ -405,5 +448,48 @@ describe('admin GroupsView column settings', () => {
     expect(text).toContain('Total$9.75')
     expect(text.indexOf('Today')).toBeLessThan(text.indexOf('Yesterday'))
     expect(text.indexOf('Yesterday')).toBeLessThan(text.indexOf('Total'))
+  })
+
+  it('batch tests selected groups with deduplicated accounts and clears selections', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [createGroup({ id: 1, name: 'Group A' }), createGroup({ id: 2, name: 'Group B' })],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    listAccounts.mockImplementation(async (_page, _pageSize, params) => ({
+      items: params.group === '1'
+        ? [{ id: 101, name: 'Shared', platform: 'anthropic', account_groups: [] }]
+        : [{ id: 101, name: 'Shared', platform: 'anthropic', account_groups: [] }, { id: 102, name: 'Only B', platform: 'anthropic', account_groups: [] }],
+      total: params.group === '1' ? 1 : 2,
+      page: 1,
+      page_size: 1000,
+      pages: 1,
+    }))
+    batchTest.mockImplementation(async (ids: number[]) => ({
+      results: ids.map((account_id) => ({
+        account_id,
+        result: { status: 'success' },
+      })),
+    }))
+
+    const wrapper = await mountView()
+    const groupCheckboxes = wrapper.findAll('[data-test="name-cell"] input[type="checkbox"]')
+    expect(groupCheckboxes).toHaveLength(2)
+
+    await groupCheckboxes[0].trigger('change')
+    await groupCheckboxes[1].trigger('change')
+    const batchButton = wrapper.find('button[title="Test selected groups ({count})"]')
+    expect(batchButton.exists()).toBe(true)
+
+    await batchButton.trigger('click')
+    await flushPromises()
+
+    expect(batchTest).toHaveBeenCalledTimes(1)
+    expect(batchTest).toHaveBeenCalledWith([101, 102])
+    expect(wrapper.find('button[title="Test selected groups ({count})"]').exists()).toBe(false)
+    expect((groupCheckboxes[0].element as HTMLInputElement).checked).toBe(false)
+    expect((groupCheckboxes[1].element as HTMLInputElement).checked).toBe(false)
   })
 })

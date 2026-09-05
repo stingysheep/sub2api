@@ -635,6 +635,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/profit',
+    name: 'AdminProfit',
+    component: () => import('@/views/admin/ProfitView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Profit & Loss',
+      titleKey: 'admin.profit.title',
+      descriptionKey: 'admin.profit.description'
+    }
+  },
+  {
     path: '/admin/affiliates',
     redirect: '/admin/affiliates/invites'
   },
@@ -761,6 +773,13 @@ const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/wechat/payment/callback',
 ]
 const BACKEND_MODE_PENDING_AUTH_PATHS = ['/register', '/email-verify']
+// Subscription pages remain implemented but are intentionally hidden for this deployment.
+const SUBSCRIPTION_UI_ENABLED = false
+const SUBSCRIPTION_ROUTES = ['/subscriptions', '/purchase', '/admin/subscriptions']
+
+function isSubscriptionRoute(path: string): boolean {
+  return SUBSCRIPTION_ROUTES.some((route) => path === route || path.startsWith(`${route}/`))
+}
 
 function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: boolean): boolean {
   if (BACKEND_MODE_ALLOWED_PATHS.some((allowedPath) => path === allowedPath || path.startsWith(allowedPath))) {
@@ -802,6 +821,11 @@ router.beforeEach(async (to, _from, next) => {
   // Check if route requires authentication
   const requiresAuth = to.meta.requiresAuth !== false // Default to true
   const requiresAdmin = to.meta.requiresAdmin === true
+
+  if (!SUBSCRIPTION_UI_ENABLED && isSubscriptionRoute(to.path)) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
+  }
 
   if (to.path === '/setup') {
     try {

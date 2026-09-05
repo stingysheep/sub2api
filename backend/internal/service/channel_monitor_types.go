@@ -32,22 +32,26 @@ const (
 
 // ChannelMonitor 渠道监控配置（service 层模型，不直接暴露 ent 类型）。
 type ChannelMonitor struct {
-	ID              int64
-	Name            string
-	Provider        string
-	APIMode         string
-	Endpoint        string
-	APIKey          string // 解密后的明文 API Key（仅在 service 内部使用，handler 层不应直接序列化返回）
-	PrimaryModel    string
-	ExtraModels     []string
-	GroupName       string
-	Enabled         bool
-	IntervalSeconds int
-	JitterSeconds   int // 每次调度 ± [0, jitter] 的随机偏移（秒），0 = 固定间隔
-	LastCheckedAt   *time.Time
-	CreatedBy       int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                    int64
+	Name                  string
+	Provider              string
+	APIMode               string
+	Endpoint              string
+	APIKey                string // 解密后的明文 API Key（仅在 service 内部使用，handler 层不应直接序列化返回）
+	PrimaryModel          string
+	ExtraModels           []string
+	GroupName             string
+	MonitorGroupID        *int64
+	MonitorGroupName      string
+	MonitorGroupSortOrder int
+	MonitorSortOrder      int
+	Enabled               bool
+	IntervalSeconds       int
+	JitterSeconds         int // 每次调度 ± [0, jitter] 的随机偏移（秒），0 = 固定间隔
+	LastCheckedAt         *time.Time
+	CreatedBy             int64
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 
 	// 配额模式（check_mode = quota / quota_probe）：
 	// 关联已有账号复用账号侧用量服务，Endpoint/APIKey 可为空（quota 模式）。
@@ -90,6 +94,8 @@ type ChannelMonitorCreateParams struct {
 	PrimaryModel     string
 	ExtraModels      []string
 	GroupName        string
+	MonitorGroupID   *int64
+	MonitorSortOrder int
 	Enabled          bool
 	IntervalSeconds  int
 	JitterSeconds    int
@@ -106,17 +112,20 @@ type ChannelMonitorCreateParams struct {
 
 // ChannelMonitorUpdateParams 更新参数（指针字段表示"未提供则不更新"）。
 type ChannelMonitorUpdateParams struct {
-	Name            *string
-	Provider        *string
-	APIMode         *string
-	Endpoint        *string
-	APIKey          *string // 空字符串表示不修改；非空字符串覆盖
-	PrimaryModel    *string
-	ExtraModels     *[]string
-	GroupName       *string
-	Enabled         *bool
-	IntervalSeconds *int
-	JitterSeconds   *int
+	Name              *string
+	Provider          *string
+	APIMode           *string
+	Endpoint          *string
+	APIKey            *string // 空字符串表示不修改；非空字符串覆盖
+	PrimaryModel      *string
+	ExtraModels       *[]string
+	GroupName         *string
+	MonitorGroupID    *int64
+	MonitorSortOrder  *int
+	ClearMonitorGroup bool
+	Enabled           *bool
+	IntervalSeconds   *int
+	JitterSeconds     *int
 	// 自定义快照字段：指针为 nil 表示不更新，非 nil 覆盖
 	// TemplateID *(*int64)：用 ** 表达三态：nil=不更新；&nil=清空；&&id=设为 id。
 	// 简化处理：用 ClearTemplate 显式标志 + TemplateID（普通指针）
@@ -130,6 +139,30 @@ type ChannelMonitorUpdateParams struct {
 	// 指向 0 = 清空关联（退回 probe 模式时由 CheckMode 分支兜底）。
 	CheckMode *string
 	AccountID *int64
+}
+
+// ChannelMonitorGroup 是管理员维护的渠道监控分组。
+type ChannelMonitorGroup struct {
+	ID           int64
+	Name         string
+	SortOrder    int
+	MonitorCount int
+	CreatedBy    int64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// ChannelMonitorGroupSortOrderUpdate 是分组排序更新项。
+type ChannelMonitorGroupSortOrderUpdate struct {
+	ID        int64
+	SortOrder int
+}
+
+// ChannelMonitorSortOrderUpdate 是渠道分组与组内排序更新项。
+type ChannelMonitorSortOrderUpdate struct {
+	ID               int64
+	MonitorGroupID   *int64
+	MonitorSortOrder int
 }
 
 // CheckResult 单个模型一次检测的结果。
@@ -146,17 +179,21 @@ type CheckResult struct {
 
 // UserMonitorView 用户只读视图：监控概览（含主模型最近状态 + 7d 可用率 + 附加模型最近状态）。
 type UserMonitorView struct {
-	ID                   int64
-	Name                 string
-	Provider             string
-	GroupName            string
-	PrimaryModel         string
-	PrimaryStatus        string
-	PrimaryLatencyMs     *int
-	PrimaryPingLatencyMs *int    // 主模型最近一次 ping 延迟
-	Availability7d       float64 // 0-100
-	ExtraModels          []ExtraModelStatus
-	Timeline             []UserMonitorTimelinePoint // 主模型最近 N 个历史点（按 checked_at DESC，最新在前）
+	ID                    int64
+	Name                  string
+	Provider              string
+	GroupName             string
+	MonitorGroupID        *int64
+	MonitorGroupName      string
+	MonitorGroupSortOrder int
+	MonitorSortOrder      int
+	PrimaryModel          string
+	PrimaryStatus         string
+	PrimaryLatencyMs      *int
+	PrimaryPingLatencyMs  *int    // 主模型最近一次 ping 延迟
+	Availability7d        float64 // 0-100
+	ExtraModels           []ExtraModelStatus
+	Timeline              []UserMonitorTimelinePoint // 主模型最近 N 个历史点（按 checked_at DESC，最新在前）
 	// LatestQuota 主模型最近一次配额快照；channel_monitor_show_quota=false
 	// 时由 handler 服务端剥离。
 	LatestQuota *domain.MonitorQuotaSnapshot

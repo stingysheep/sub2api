@@ -14,9 +14,21 @@
           <AccountTableActions
             :loading="loading"
             @refresh="handleManualRefresh"
-            @create="showCreate = true"
+            @create="openCreateAccount"
           >
             <template #after>
+              <button
+                @click="syncAllUpstreamModels"
+                :disabled="syncAllUpstreamModelsLoading"
+                class="btn btn-secondary px-2 md:px-3"
+                :title="t('admin.accounts.syncAllUpstreamModels')"
+              >
+                <Icon name="sync" size="sm" :class="syncAllUpstreamModelsLoading ? 'animate-spin' : ''" />
+                <span class="hidden md:inline">
+                  {{ syncAllUpstreamModelsLoading ? t('admin.accounts.syncAllUpstreamModelsLoading') : t('admin.accounts.syncAllUpstreamModels') }}
+                </span>
+              </button>
+
               <!-- Auto Refresh Dropdown -->
               <div class="relative" ref="autoRefreshDropdownRef">
                 <button
@@ -175,27 +187,53 @@
         </div>
       </template>
       <template #table>
-        <AccountBulkActionsBar
-          :selected-ids="selIds"
-          :total-results="pagination.total"
-          :selecting-all="selectingAllResults"
-          :all-results-selected="allResultsSelected"
-          @delete="handleBulkDelete"
-          @reset-status="handleBulkResetStatus"
-          @refresh-token="handleBulkRefreshToken"
-          @probe-upstream-billing="handleBulkProbeUpstreamBilling"
-          @edit-selected="openBulkEditSelected"
-          @edit-filtered="openBulkEditFiltered"
-          @clear="clearSelection"
-          @select-page="selectPage"
-          @select-all-results="handleSelectAllResults"
-          @toggle-schedulable="handleBulkToggleSchedulable"
-        />
-        <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div ref="accountWorkspaceRef" class="account-management-workspace flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+          <div class="account-profile-pane w-full min-h-0 lg:flex-none" :style="{ '--profile-nav-width': `${profileNavWidth}px` }">
+            <UpstreamProviderProfilesPanel
+              :profiles="upstreamProfiles"
+              :accounts="accounts"
+              :profile-accounts="profileAccounts"
+              :active-profile-id="activeUpstreamProfileId"
+              @select="handleUpstreamProfileSelect"
+              @updated="handleUpstreamProfilesUpdated"
+            />
+          </div>
+          <div
+            class="profile-nav-resizer hidden lg:flex"
+            :class="profileNavResizing && 'profile-nav-resizer-active'"
+            role="separator"
+            aria-orientation="vertical"
+            :aria-valuenow="profileNavWidth"
+            :aria-valuemin="PROFILE_NAV_MIN_WIDTH"
+            :aria-valuemax="PROFILE_NAV_MAX_WIDTH"
+            tabindex="0"
+            :title="t('admin.accounts.upstreamProfiles.resizeNavigation')"
+            @pointerdown="startProfileNavResize"
+          >
+            <span />
+          </div>
+          <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <AccountBulkActionsBar
+              :selected-ids="selIds"
+              :total-results="activeUpstreamProfileId === 'all' ? pagination.total : profileFilteredAccounts.length"
+              :selecting-all="selectingAllResults"
+              :all-results-selected="allResultsSelected"
+              @delete="handleBulkDelete"
+              @reset-status="handleBulkResetStatus"
+              @refresh-token="handleBulkRefreshToken"
+              @probe-upstream-billing="handleBulkProbeUpstreamBilling"
+              @edit-selected="openBulkEditSelected"
+              @edit-filtered="openBulkEditFiltered"
+              @clear="clearSelection"
+              @select-page="selectPage"
+              @select-all-results="handleSelectAllResults"
+              @toggle-schedulable="handleBulkToggleSchedulable"
+            />
+            <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <DataTable
           ref="dataTableRef"
           :columns="cols"
-          :data="accounts"
+          :data="displayedAccounts"
           :loading="loading"
           row-key="id"
           :server-side-sort="true"
@@ -446,12 +484,14 @@
             </div>
           </template>
         </DataTable>
+            </div>
+          </div>
         </div>
       </template>
-      <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
+      <template #pagination><Pagination v-if="(activeUpstreamProfileId === 'all' ? pagination.total : profileFilteredAccounts.length) > 0" :page="activeUpstreamProfileId === 'all' ? pagination.page : profilePage" :total="activeUpstreamProfileId === 'all' ? pagination.total : profileFilteredAccounts.length" :page-size="activeUpstreamProfileId === 'all' ? pagination.page_size : profilePageSize" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
-    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
-    <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
+    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" :upstream-profiles="upstreamProfiles" :default-upstream-profile-id="defaultCreateUpstreamProfileId" :default-platform="defaultCreatePlatform" :existing-account-names="existingAccountNames" @close="showCreate = false" @created="reload" />
+    <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" :upstream-profiles="upstreamProfiles" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
@@ -467,6 +507,8 @@
       :target="bulkEditTarget ?? undefined"
       :proxies="proxies"
       :groups="groups"
+      :accounts="bulkEditAccounts"
+      :upstream-profiles="upstreamProfiles"
       @close="showBulkEdit = false"
       @updated="handleBulkUpdated"
     />
@@ -513,6 +555,7 @@ import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vu
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
+import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import type { SelectOption } from '@/components/common/Select.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
@@ -524,6 +567,7 @@ import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
+import UpstreamProviderProfilesPanel, { type ProfileSelection as UpstreamProfileSelection } from '@/components/admin/account/UpstreamProviderProfilesPanel.vue'
 import { fetchAllAccountIds } from '@/utils/accountSelection'
 import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
@@ -533,6 +577,7 @@ import { sanitizeUrl } from '@/utils/url'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 import { formatMultiplier } from '@/utils/formatters'
 import type { Account, AccountListItem, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
+import type { UpstreamProviderProfile } from '@/api/admin/settings'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -545,6 +590,66 @@ const accountGroupsForRow = (account: Pick<AccountListItem, 'group_ids'>): Admin
   const groupIDs = account.group_ids ?? []
   if (groupIDs.length === 0) return []
   return groupIDs.map(id => groupsByID.value.get(id)).filter((group): group is AdminGroup => Boolean(group))
+}
+const upstreamProfiles = ref<UpstreamProviderProfile[]>([])
+const activeUpstreamProfileId = ref<UpstreamProfileSelection>('all')
+const defaultCreateUpstreamProfileId = computed<number | null>(() =>
+  typeof activeUpstreamProfileId.value === 'number'
+    ? activeUpstreamProfileId.value
+    : typeof activeUpstreamProfileId.value === 'object'
+      ? activeUpstreamProfileId.value.profileId === 'unassigned' ? null : activeUpstreamProfileId.value.profileId
+      : null
+)
+const defaultCreatePlatform = computed<AccountPlatform | null>(() =>
+  typeof activeUpstreamProfileId.value === 'object' ? activeUpstreamProfileId.value.platform : null
+)
+const existingAccountNames = computed(() => accounts.value.map(account => account.name))
+const profileNavWidth = ref(288)
+const profileNavResizing = ref(false)
+const accountWorkspaceRef = ref<HTMLElement | null>(null)
+const PROFILE_NAV_WIDTH_KEY = 'sub2api:admin:accounts:profile-nav-width'
+const PROFILE_NAV_MIN_WIDTH = 220
+const PROFILE_NAV_MAX_WIDTH = 440
+let profileNavPointerId: number | null = null
+
+const clampProfileNavWidth = (value: number) => Math.min(PROFILE_NAV_MAX_WIDTH, Math.max(PROFILE_NAV_MIN_WIDTH, Math.round(value)))
+const restoreProfileNavWidth = () => {
+  try {
+    const saved = Number(localStorage.getItem(PROFILE_NAV_WIDTH_KEY))
+    if (Number.isFinite(saved)) profileNavWidth.value = clampProfileNavWidth(saved)
+  } catch {
+    // Keep the default when browser storage is unavailable.
+  }
+}
+const persistProfileNavWidth = (value: number) => {
+  try {
+    localStorage.setItem(PROFILE_NAV_WIDTH_KEY, String(clampProfileNavWidth(value)))
+  } catch {
+    // Resizing remains usable when browser storage is unavailable.
+  }
+}
+const handleProfileNavResizeMove = (event: PointerEvent) => {
+  if (!profileNavResizing.value || profileNavPointerId !== event.pointerId || !accountWorkspaceRef.value) return
+  const rect = accountWorkspaceRef.value.getBoundingClientRect()
+  profileNavWidth.value = clampProfileNavWidth(event.clientX - rect.left)
+}
+const endProfileNavResize = (event?: PointerEvent) => {
+  if (event && profileNavPointerId !== null && event.pointerId !== profileNavPointerId) return
+  profileNavResizing.value = false
+  profileNavPointerId = null
+  window.removeEventListener('pointermove', handleProfileNavResizeMove)
+  window.removeEventListener('pointerup', endProfileNavResize)
+  persistProfileNavWidth(profileNavWidth.value)
+}
+const startProfileNavResize = (event: PointerEvent) => {
+  if (window.innerWidth < 1024) return
+  profileNavPointerId = event.pointerId
+  profileNavResizing.value = true
+  ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+  window.addEventListener('pointermove', handleProfileNavResizeMove)
+  window.addEventListener('pointerup', endProfileNavResize)
+  event.preventDefault()
+}
 }
 const accountTableRef = ref<HTMLElement | null>(null)
 const dataTableRef = ref<InstanceType<typeof DataTable> | null>(null)
@@ -595,6 +700,7 @@ const showExportDataDialog = ref(false)
 const includeProxyOnExport = ref(true)
 const showBulkEdit = ref(false)
 const bulkEditTarget = ref<AccountBulkEditTarget | null>(null)
+const bulkEditAccounts = ref<Account[]>([])
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
 const showCreateShadowDialog = ref(false)
@@ -691,6 +797,7 @@ const autoRefreshDropdownRef = ref<HTMLElement | null>(null)
 const AUTO_REFRESH_STORAGE_KEY = 'account-auto-refresh'
 const autoRefreshIntervals = [5, 10, 15, 30] as const
 const autoRefreshEnabled = ref(false)
+const syncAllUpstreamModelsLoading = ref(false)
 const autoRefreshIntervalSeconds = ref<(typeof autoRefreshIntervals)[number]>(30)
 const autoRefreshCountdown = ref(0)
 const autoRefreshETag = ref<string | null>(null)
@@ -1092,6 +1199,93 @@ const {
   }
 })
 
+// The profile navigator must not be derived from the current table page. Keep
+// a complete, lightweight copy for counts and profile selection; the table
+// remains server-paginated when showing "all" accounts.
+const profileAccounts = ref<Account[]>([])
+const profilePage = ref(1)
+const profilePageSize = ref(getPersistedPageSize())
+let profileAccountsRequestSeq = 0
+const profileAccountFilters = () => {
+  const raw = toRaw(params) as Record<string, unknown>
+  return {
+    platform: typeof raw.platform === 'string' ? raw.platform : '',
+    type: typeof raw.type === 'string' ? raw.type : '',
+    status: typeof raw.status === 'string' ? raw.status : '',
+    privacy_mode: typeof raw.privacy_mode === 'string' ? raw.privacy_mode : '',
+    group: typeof raw.group === 'string' ? raw.group : '',
+    search: typeof raw.search === 'string' ? raw.search : '',
+    lite: '1',
+    include_scheduler_score: '0',
+    sort_by: sortState.sort_by,
+    sort_order: sortState.sort_order
+  }
+}
+const loadProfileAccounts = async () => {
+  const requestSeq = ++profileAccountsRequestSeq
+  try {
+    const pageSize = 1000
+    const first = await adminAPI.accounts.list(1, pageSize, profileAccountFilters())
+    const all = [...(first.items || [])]
+    const pages = Math.max(1, Number(first.pages || Math.ceil(Number(first.total || 0) / pageSize)))
+    for (let page = 2; page <= pages; page += 1) {
+      const next = await adminAPI.accounts.list(page, pageSize, profileAccountFilters())
+      all.push(...(next.items || []))
+    }
+    if (requestSeq === profileAccountsRequestSeq) profileAccounts.value = all
+  } catch (error) {
+    if (requestSeq === profileAccountsRequestSeq) {
+      profileAccounts.value = []
+      console.error('Failed to load complete account set for upstream profiles:', error)
+    }
+  }
+}
+
+const accountProfileIDFor = (account: Account): number | null => {
+  const accountWithProfile = account as Account & { upstream_provider_profile_id?: number | string | null }
+  const value = accountWithProfile.upstream_provider_profile_id ?? account.extra?.upstream_provider_profile_id
+  const id = Number(value)
+  return Number.isFinite(id) && id > 0 ? id : null
+}
+
+const profileOrder = computed(() => new Map(
+  [...upstreamProfiles.value]
+    .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+    .map((profile, index) => [profile.id, index])
+))
+
+const profileFilteredAccounts = computed(() => {
+  const active = activeUpstreamProfileId.value
+  if (active === 'all') return []
+  return profileAccounts.value.filter(account => {
+    if (active === 'unassigned') return accountProfileIDFor(account) === null
+    if (typeof active === 'object') {
+      const profileMatches = active.profileId === 'unassigned'
+        ? accountProfileIDFor(account) === null
+        : accountProfileIDFor(account) === active.profileId
+      return profileMatches && account.platform === active.platform
+    }
+    return accountProfileIDFor(account) === active
+  })
+})
+
+const displayedAccounts = computed(() => {
+  const active = activeUpstreamProfileId.value
+  const rows = active === 'all' ? [...accounts.value] : profileFilteredAccounts.value
+
+  if (active !== 'all') {
+    const start = (profilePage.value - 1) * profilePageSize.value
+    return rows.slice(start, start + profilePageSize.value)
+  }
+  return rows.sort((a, b) => {
+    const aOrder = accountProfileIDFor(a)
+    const bOrder = accountProfileIDFor(b)
+    const aRank = aOrder === null ? Number.MAX_SAFE_INTEGER : (profileOrder.value.get(aOrder) ?? Number.MAX_SAFE_INTEGER)
+    const bRank = bOrder === null ? Number.MAX_SAFE_INTEGER : (profileOrder.value.get(bOrder) ?? Number.MAX_SAFE_INTEGER)
+    return aRank - bRank || a.id - b.id
+  })
+})
+
 const {
   selectedSet,
   selectedIds: selIds,
@@ -1107,7 +1301,7 @@ const {
   selectVisible: selectCurrentPage,
   batchUpdate
 } = useTableSelection<AccountListItem>({
-  rows: accounts,
+  rows: displayedAccounts as AccountListItem[],
   getId: (account) => account.id
 })
 
@@ -1160,7 +1354,7 @@ const load = async (options: AccountLoadOptions = {}) => {
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
   requestParams.lite = '1'
-  await baseLoad()
+  await Promise.all([baseLoad(), loadProfileAccounts()])
   if (options.refreshTodayStats !== false) await refreshTodayStatsBatch()
 }
 
@@ -1169,8 +1363,35 @@ const reload = async () => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
-  await baseReload()
+  await Promise.all([baseReload(), loadProfileAccounts()])
   await refreshTodayStatsBatch()
+}
+
+const syncAllUpstreamModels = async () => {
+  if (syncAllUpstreamModelsLoading.value) return
+  syncAllUpstreamModelsLoading.value = true
+  try {
+    const accountIDs = await fetchAllAccountIds(
+      (page, pageSize, filters) => adminAPI.accounts.list(page, pageSize, filters),
+      {}
+    )
+    let successCount = 0
+    let failedCount = 0
+    for (let index = 0; index < accountIDs.length; index += 50) {
+      const response = await adminAPI.accounts.batchSyncUpstreamModels(accountIDs.slice(index, index + 50))
+      for (const result of response.results || []) {
+        if (result.success) successCount += 1
+        else failedCount += 1
+      }
+    }
+    await reload()
+    appStore.showSuccess(t('admin.accounts.syncAllUpstreamModelsDone', { success: successCount, failed: failedCount }))
+  } catch (error) {
+    console.error('Failed to sync all upstream models:', error)
+    appStore.showError(t('admin.accounts.syncAllUpstreamModelsFailed'))
+  } finally {
+    syncAllUpstreamModelsLoading.value = false
+  }
 }
 
 const buildUpstreamBillingRateFilters = () => {
@@ -1289,6 +1510,7 @@ useIntervalFn(() => { void refreshUpstreamBillingRates() }, 5 * 60_000, { immedi
 
 const debouncedReload = () => {
   clearSelection()
+  profilePage.value = 1
   syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
@@ -1297,6 +1519,11 @@ const debouncedReload = () => {
 }
 
 const handlePageChange = (page: number) => {
+  if (activeUpstreamProfileId.value !== 'all') {
+    const pageCount = Math.max(1, Math.ceil(profileFilteredAccounts.value.length / profilePageSize.value))
+    profilePage.value = Math.min(Math.max(1, page), pageCount)
+    return
+  }
   syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
@@ -1305,6 +1532,11 @@ const handlePageChange = (page: number) => {
 }
 
 const handlePageSizeChange = (size: number) => {
+  if (activeUpstreamProfileId.value !== 'all') {
+    profilePageSize.value = size
+    profilePage.value = 1
+    return
+  }
   syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
@@ -1842,6 +2074,13 @@ const handleEdit = async (a: AccountListItem) => {
   edAcc.value = account
   showEdit.value = true
 }
+const openCreateAccount = () => { showCreate.value = true }
+const handleUpstreamProfileSelect = (profileID: UpstreamProfileSelection) => {
+  activeUpstreamProfileId.value = profileID
+  profilePage.value = 1
+  clearSelection()
+}
+}
 const openMenu = (a: Account, e: MouseEvent) => {
   menu.acc = a
 
@@ -2102,7 +2341,14 @@ const buildBulkEditFilterSnapshot = () => {
 }
 
 const handleSelectAllResults = async () => {
-  if (selectingAllResults.value || pagination.total === 0) return
+  if (selectingAllResults.value || (activeUpstreamProfileId.value === 'all' ? pagination.total : profileFilteredAccounts.value.length) === 0) return
+
+  if (activeUpstreamProfileId.value !== 'all') {
+    const ids = profileFilteredAccounts.value.map(account => account.id)
+    setSelectedIds(ids)
+    selectedAllResultIDs.value = new Set(ids)
+    return
+  }
 
   const requestVersion = ++selectionRequestVersion.value
   const filters = buildBulkEditFilterSnapshot()
@@ -2133,33 +2379,77 @@ const collectSelectionMetadata = (rows: Account[]) => {
   return { selectedPlatforms, selectedTypes }
 }
 
-const openBulkEditSelected = () => {
-  bulkEditTarget.value = {
-    mode: 'selected',
-    accountIds: [...selIds.value],
-    selectedPlatforms: [...selPlatforms.value],
-    selectedTypes: [...selTypes.value]
+const loadAccountsByIDs = async (ids: number[]) => {
+  const cached = new Map(accounts.value.map(account => [account.id, account]))
+  const missingIDs = ids.filter(id => !cached.has(id))
+  if (missingIDs.length > 0) {
+    const fetched = await Promise.all(missingIDs.map(id => adminAPI.accounts.getById(id)))
+    fetched.forEach(account => cached.set(account.id, account))
   }
-  showBulkEdit.value = true
+  return ids.map(id => cached.get(id)).filter((account): account is Account => Boolean(account))
+}
+
+const loadAllAccountsForFilter = async (filters: ReturnType<typeof buildBulkEditFilterSnapshot>) => {
+  const pageSize = 1000
+  const firstPage = await adminAPI.accounts.list(1, pageSize, {
+    ...filters,
+    include_scheduler_score: '0'
+  })
+  const pageCount = Math.max(firstPage.pages ?? 0, Math.ceil(firstPage.total / pageSize))
+  const rows = [...firstPage.items]
+  for (let page = 2; page <= pageCount; page += 1) {
+    const result = await adminAPI.accounts.list(page, pageSize, {
+      ...filters,
+      include_scheduler_score: '0'
+    })
+    rows.push(...result.items)
+  }
+  return { items: rows, total: firstPage.total }
+}
+
+const openBulkEditSelected = async () => {
+  if (selIds.value.length === 0) return
+  try {
+    // Selection can span multiple table pages. Load the missing records so the
+    // bulk editor can always render their upstream categories and order.
+    bulkEditAccounts.value = await loadAccountsByIDs([...selIds.value])
+    bulkEditTarget.value = {
+      mode: 'selected',
+      accountIds: [...selIds.value],
+      selectedPlatforms: [...selPlatforms.value],
+      selectedTypes: [...selTypes.value]
+    }
+    showBulkEdit.value = true
+  } catch (error) {
+    console.error('Failed to load selected accounts for bulk edit:', error)
+    appStore.showError(t('admin.accounts.bulkEdit.failed'))
+  }
 }
 
 const openBulkEditFiltered = async () => {
   const filters = buildBulkEditFilterSnapshot()
-  const preview = await adminAPI.accounts.list(1, 100, filters)
-  const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(preview.items)
-  bulkEditTarget.value = {
-    mode: 'filtered',
-    filters,
-    previewCount: preview.total,
-    selectedPlatforms,
-    selectedTypes
+  try {
+    const preview = await loadAllAccountsForFilter(filters)
+    const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(preview.items)
+    bulkEditAccounts.value = preview.items
+    bulkEditTarget.value = {
+      mode: 'filtered',
+      filters,
+      previewCount: preview.total,
+      selectedPlatforms,
+      selectedTypes
+    }
+    showBulkEdit.value = true
+  } catch (error) {
+    console.error('Failed to load filtered accounts for bulk edit:', error)
+    appStore.showError(t('admin.accounts.bulkEdit.failed'))
   }
-  showBulkEdit.value = true
 }
 
 const handleBulkUpdated = () => {
   showBulkEdit.value = false
   bulkEditTarget.value = null
+  bulkEditAccounts.value = []
   clearSelection()
   reload()
 }
@@ -2293,6 +2583,14 @@ const handleProbeUpstreamBilling = async (account: Account) => {
 const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)
   enterAutoRefreshSilentWindow()
+}
+const handleUpstreamProfilesUpdated = (profiles: UpstreamProviderProfile[]) => {
+  upstreamProfiles.value = profiles
+  const active = activeUpstreamProfileId.value
+  const activeProfileID = typeof active === 'number' ? active : typeof active === 'object' ? active.profileId : null
+  if (typeof activeProfileID === 'number' && !profiles.some(profile => profile.id === activeProfileID)) {
+    activeUpstreamProfileId.value = 'all'
+  }
 }
 const formatExportTimestamp = () => {
   const now = new Date()
@@ -2560,6 +2858,7 @@ const handleClickOutside = (event: MouseEvent) => {
 
 onMounted(async () => {
   if (typeof window !== 'undefined') {
+    restoreProfileNavWidth()
     desktopViewportMediaQuery = window.matchMedia(desktopViewportQuery)
     isDesktopViewport.value = desktopViewportMediaQuery.matches
     desktopViewportListener = (event: MediaQueryListEvent) => {
@@ -2578,6 +2877,11 @@ onMounted(async () => {
     adminAPI.proxies.getAll(),
     adminAPI.groups.getAll()
   ])
+  try {
+    upstreamProfiles.value = await adminAPI.settings.getUpstreamProviderProfiles()
+  } catch (error) {
+    console.error('Failed to load upstream provider profiles:', error)
+  }
   if (proxiesResult.status === 'fulfilled') {
     proxies.value = proxiesResult.value
   } else {
@@ -2601,6 +2905,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  endProfileNavResize()
   upstreamBillingRateAbortController?.abort()
   if (usageBatchFlushTimer !== null) {
     clearTimeout(usageBatchFlushTimer)
@@ -2623,6 +2928,32 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.account-profile-pane { width: 100%; }
+.profile-nav-resizer {
+  width: 0.75rem;
+  flex-shrink: 0;
+  cursor: col-resize;
+  align-items: stretch;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+}
+.profile-nav-resizer::before {
+  content: '';
+  width: 1px;
+  background: rgb(229 231 235);
+  transition: background-color 150ms ease, width 150ms ease;
+}
+.profile-nav-resizer:hover::before,
+.profile-nav-resizer-active::before { width: 2px; background: rgb(16 185 129); }
+@media (min-width: 1024px) {
+  .account-profile-pane { width: var(--profile-nav-width); }
+}
+@media (prefers-color-scheme: dark) {
+  .profile-nav-resizer::before { background: rgb(75 85 99); }
+  .profile-nav-resizer:hover::before,
+  .profile-nav-resizer-active::before { background: rgb(52 211 153); }
+}
 .account-tools-menu-item {
   @apply flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700;
 }

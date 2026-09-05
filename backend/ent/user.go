@@ -31,6 +31,12 @@ type User struct {
 	Role string `json:"role,omitempty"`
 	// Balance holds the value of the "balance" field.
 	Balance float64 `json:"balance,omitempty"`
+	// FreeBalance holds the value of the "free_balance" field.
+	FreeBalance float64 `json:"free_balance,omitempty"`
+	// PaidBalance holds the value of the "paid_balance" field.
+	PaidBalance float64 `json:"paid_balance,omitempty"`
+	// FreeBalanceIssued holds the value of the "free_balance_issued" field.
+	FreeBalanceIssued float64 `json:"free_balance_issued,omitempty"`
 	// FrozenBalance holds the value of the "frozen_balance" field.
 	FrozenBalance float64 `json:"frozen_balance,omitempty"`
 	// Concurrency holds the value of the "concurrency" field.
@@ -241,7 +247,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case user.FieldTotpEnabled, user.FieldRestrictPublicGroups, user.FieldBalanceNotifyEnabled:
 			values[i] = new(sql.NullBool)
-		case user.FieldBalance, user.FieldFrozenBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
+		case user.FieldBalance, user.FieldFreeBalance, user.FieldPaidBalance, user.FieldFreeBalanceIssued, user.FieldFrozenBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
 			values[i] = new(sql.NullFloat64)
 		case user.FieldID, user.FieldConcurrency, user.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
@@ -312,6 +318,24 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field balance", values[i])
 			} else if value.Valid {
 				_m.Balance = value.Float64
+			}
+		case user.FieldFreeBalance:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field free_balance", values[i])
+			} else if value.Valid {
+				_m.FreeBalance = value.Float64
+			}
+		case user.FieldPaidBalance:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field paid_balance", values[i])
+			} else if value.Valid {
+				_m.PaidBalance = value.Float64
+			}
+		case user.FieldFreeBalanceIssued:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field free_balance_issued", values[i])
+			} else if value.Valid {
+				_m.FreeBalanceIssued = value.Float64
 			}
 		case user.FieldFrozenBalance:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -554,6 +578,15 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("balance=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Balance))
+	builder.WriteString(", ")
+	builder.WriteString("free_balance=")
+	builder.WriteString(fmt.Sprintf("%v", _m.FreeBalance))
+	builder.WriteString(", ")
+	builder.WriteString("paid_balance=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PaidBalance))
+	builder.WriteString(", ")
+	builder.WriteString("free_balance_issued=")
+	builder.WriteString(fmt.Sprintf("%v", _m.FreeBalanceIssued))
 	builder.WriteString(", ")
 	builder.WriteString("frozen_balance=")
 	builder.WriteString(fmt.Sprintf("%v", _m.FrozenBalance))

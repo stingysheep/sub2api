@@ -129,6 +129,69 @@ func (_u *UserUpdate) AddBalance(v float64) *UserUpdate {
 	return _u
 }
 
+// SetFreeBalance sets the "free_balance" field.
+func (_u *UserUpdate) SetFreeBalance(v float64) *UserUpdate {
+	_u.mutation.ResetFreeBalance()
+	_u.mutation.SetFreeBalance(v)
+	return _u
+}
+
+// SetNillableFreeBalance sets the "free_balance" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableFreeBalance(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetFreeBalance(*v)
+	}
+	return _u
+}
+
+// AddFreeBalance adds value to the "free_balance" field.
+func (_u *UserUpdate) AddFreeBalance(v float64) *UserUpdate {
+	_u.mutation.AddFreeBalance(v)
+	return _u
+}
+
+// SetPaidBalance sets the "paid_balance" field.
+func (_u *UserUpdate) SetPaidBalance(v float64) *UserUpdate {
+	_u.mutation.ResetPaidBalance()
+	_u.mutation.SetPaidBalance(v)
+	return _u
+}
+
+// SetNillablePaidBalance sets the "paid_balance" field if the given value is not nil.
+func (_u *UserUpdate) SetNillablePaidBalance(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetPaidBalance(*v)
+	}
+	return _u
+}
+
+// AddPaidBalance adds value to the "paid_balance" field.
+func (_u *UserUpdate) AddPaidBalance(v float64) *UserUpdate {
+	_u.mutation.AddPaidBalance(v)
+	return _u
+}
+
+// SetFreeBalanceIssued sets the "free_balance_issued" field.
+func (_u *UserUpdate) SetFreeBalanceIssued(v float64) *UserUpdate {
+	_u.mutation.ResetFreeBalanceIssued()
+	_u.mutation.SetFreeBalanceIssued(v)
+	return _u
+}
+
+// SetNillableFreeBalanceIssued sets the "free_balance_issued" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableFreeBalanceIssued(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetFreeBalanceIssued(*v)
+	}
+	return _u
+}
+
+// AddFreeBalanceIssued adds value to the "free_balance_issued" field.
+func (_u *UserUpdate) AddFreeBalanceIssued(v float64) *UserUpdate {
+	_u.mutation.AddFreeBalanceIssued(v)
+	return _u
+}
+
 // SetFrozenBalance sets the "frozen_balance" field.
 func (_u *UserUpdate) SetFrozenBalance(v float64) *UserUpdate {
 	_u.mutation.ResetFrozenBalance()
@@ -1032,6 +1095,24 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedBalance(); ok {
 		_spec.AddField(user.FieldBalance, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.FreeBalance(); ok {
+		_spec.SetField(user.FieldFreeBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedFreeBalance(); ok {
+		_spec.AddField(user.FieldFreeBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.PaidBalance(); ok {
+		_spec.SetField(user.FieldPaidBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedPaidBalance(); ok {
+		_spec.AddField(user.FieldPaidBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.FreeBalanceIssued(); ok {
+		_spec.SetField(user.FieldFreeBalanceIssued, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedFreeBalanceIssued(); ok {
+		_spec.AddField(user.FieldFreeBalanceIssued, field.TypeFloat64, value)
+	}
 	if value, ok := _u.mutation.FrozenBalance(); ok {
 		_spec.SetField(user.FieldFrozenBalance, field.TypeFloat64, value)
 	}
@@ -1819,6 +1900,69 @@ func (_u *UserUpdateOne) SetNillableBalance(v *float64) *UserUpdateOne {
 // AddBalance adds value to the "balance" field.
 func (_u *UserUpdateOne) AddBalance(v float64) *UserUpdateOne {
 	_u.mutation.AddBalance(v)
+	return _u
+}
+
+// SetFreeBalance sets the "free_balance" field.
+func (_u *UserUpdateOne) SetFreeBalance(v float64) *UserUpdateOne {
+	_u.mutation.ResetFreeBalance()
+	_u.mutation.SetFreeBalance(v)
+	return _u
+}
+
+// SetNillableFreeBalance sets the "free_balance" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableFreeBalance(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetFreeBalance(*v)
+	}
+	return _u
+}
+
+// AddFreeBalance adds value to the "free_balance" field.
+func (_u *UserUpdateOne) AddFreeBalance(v float64) *UserUpdateOne {
+	_u.mutation.AddFreeBalance(v)
+	return _u
+}
+
+// SetPaidBalance sets the "paid_balance" field.
+func (_u *UserUpdateOne) SetPaidBalance(v float64) *UserUpdateOne {
+	_u.mutation.ResetPaidBalance()
+	_u.mutation.SetPaidBalance(v)
+	return _u
+}
+
+// SetNillablePaidBalance sets the "paid_balance" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillablePaidBalance(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetPaidBalance(*v)
+	}
+	return _u
+}
+
+// AddPaidBalance adds value to the "paid_balance" field.
+func (_u *UserUpdateOne) AddPaidBalance(v float64) *UserUpdateOne {
+	_u.mutation.AddPaidBalance(v)
+	return _u
+}
+
+// SetFreeBalanceIssued sets the "free_balance_issued" field.
+func (_u *UserUpdateOne) SetFreeBalanceIssued(v float64) *UserUpdateOne {
+	_u.mutation.ResetFreeBalanceIssued()
+	_u.mutation.SetFreeBalanceIssued(v)
+	return _u
+}
+
+// SetNillableFreeBalanceIssued sets the "free_balance_issued" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableFreeBalanceIssued(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetFreeBalanceIssued(*v)
+	}
+	return _u
+}
+
+// AddFreeBalanceIssued adds value to the "free_balance_issued" field.
+func (_u *UserUpdateOne) AddFreeBalanceIssued(v float64) *UserUpdateOne {
+	_u.mutation.AddFreeBalanceIssued(v)
 	return _u
 }
 
@@ -2754,6 +2898,24 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.AddedBalance(); ok {
 		_spec.AddField(user.FieldBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.FreeBalance(); ok {
+		_spec.SetField(user.FieldFreeBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedFreeBalance(); ok {
+		_spec.AddField(user.FieldFreeBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.PaidBalance(); ok {
+		_spec.SetField(user.FieldPaidBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedPaidBalance(); ok {
+		_spec.AddField(user.FieldPaidBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.FreeBalanceIssued(); ok {
+		_spec.SetField(user.FieldFreeBalanceIssued, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedFreeBalanceIssued(); ok {
+		_spec.AddField(user.FieldFreeBalanceIssued, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.FrozenBalance(); ok {
 		_spec.SetField(user.FieldFrozenBalance, field.TypeFloat64, value)

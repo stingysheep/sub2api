@@ -7104,6 +7104,27 @@
                 </p>
               </div>
 
+              <div v-if="form.channel_monitor_mode === 'v1'">
+                <label class="input-label">
+                  {{ t('admin.settings.features.channelMonitor.degradedThreshold') }}
+                  <span class="text-red-500">*</span>
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    v-model.number="form.channel_monitor_degraded_threshold_seconds"
+                    type="number"
+                    min="1"
+                    max="45"
+                    step="1"
+                    class="input max-w-xs"
+                  />
+                  <span class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.features.channelMonitor.secondsUnit') }}</span>
+                </div>
+                <p class="mt-1.5 text-xs text-gray-400">
+                  {{ t('admin.settings.features.channelMonitor.degradedThresholdHint') }}
+                </p>
+              </div>
+
               <div v-if="form.channel_monitor_mode === 'v2'" class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                   <p class="text-sm font-medium text-gray-900 dark:text-white">
@@ -7350,6 +7371,19 @@
                 </div>
                 <p class="mt-1 text-xs text-gray-400">
                   {{ t('admin.settings.features.affiliate.rebateRateHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
+                  {{ t('admin.settings.features.affiliate.displayRebateRate') }}
+                </label>
+                <div class="relative">
+                  <input v-model.number="form.affiliate_display_rebate_rate" type="number" step="0.01" min="0" max="100" class="input pr-8" placeholder="25" />
+                  <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+                </div>
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.affiliate.displayRebateRateHint') }}
                 </p>
               </div>
 
@@ -9481,6 +9515,7 @@ type SettingsForm = Omit<
   | "wechat_connect_mobile_enabled"
 > & {
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
+  channel_monitor_degraded_threshold_seconds: number;
   channel_monitor_hide_throughput: boolean;
   channel_monitor_show_quota: boolean;
   smtp_password: string;
@@ -9550,6 +9585,7 @@ const form = reactive<SettingsForm>({
   default_platform_quotas: normalizePlatformQuotasMap() as DefaultPlatformQuotasMap,
   account_scheduling_thresholds: normalizeAccountSchedulingThresholdsMap(),
   affiliate_rebate_rate: 20,
+  affiliate_display_rebate_rate: 20,
   affiliate_rebate_freeze_hours: 0,
   affiliate_rebate_duration_days: 0,
   affiliate_rebate_per_invitee_cap: 0,
@@ -9795,6 +9831,7 @@ const form = reactive<SettingsForm>({
   channel_monitor_enabled: true,
   channel_monitor_mode: 'v1' as 'v1' | 'v2',
   channel_monitor_default_interval_seconds: 60,
+  channel_monitor_degraded_threshold_seconds: 15,
   channel_monitor_hide_throughput: false,
   channel_monitor_show_quota: false,
   // Available Channels feature switch
@@ -10797,6 +10834,8 @@ async function loadSettings() {
       settings.login_agreement_mode === "checkbox" ? "checkbox" : "modal";
     form.channel_monitor_mode =
       settings.channel_monitor_mode === "v2" ? "v2" : "v1";
+    form.channel_monitor_degraded_threshold_seconds =
+      Number(settings.channel_monitor_degraded_threshold_seconds) || 15;
     form.channel_monitor_hide_throughput = Boolean(
       settings.channel_monitor_hide_throughput
     );
@@ -11182,6 +11221,10 @@ async function saveSettings() {
         100,
         Math.max(0, Number(form.affiliate_rebate_rate) || 0),
       ),
+      affiliate_display_rebate_rate: Math.min(
+        100,
+        Math.max(0, Number(form.affiliate_display_rebate_rate) || 0),
+      ),
       affiliate_rebate_freeze_hours: Math.max(0, Math.min(720, Number(form.affiliate_rebate_freeze_hours) || 0)),
       affiliate_rebate_duration_days: Math.max(0, Math.min(3650, Math.floor(Number(form.affiliate_rebate_duration_days) || 0))),
       affiliate_rebate_per_invitee_cap: Math.max(0, Number(form.affiliate_rebate_per_invitee_cap) || 0),
@@ -11455,6 +11498,8 @@ async function saveSettings() {
       channel_monitor_mode: form.channel_monitor_mode === 'v1' ? 'v1' : 'v2',
       channel_monitor_default_interval_seconds:
         Number(form.channel_monitor_default_interval_seconds) || 60,
+      channel_monitor_degraded_threshold_seconds:
+        Math.min(45, Math.max(1, Number(form.channel_monitor_degraded_threshold_seconds) || 15)),
       channel_monitor_hide_throughput: Boolean(form.channel_monitor_hide_throughput),
       channel_monitor_show_quota: Boolean(form.channel_monitor_show_quota),
       // Available Channels feature switch

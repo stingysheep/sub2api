@@ -14618,6 +14618,10 @@ type ChannelMonitorMutation struct {
 	extra_models            *[]string
 	appendextra_models      []string
 	group_name              *string
+	monitor_group_id        *int64
+	addmonitor_group_id     *int64
+	monitor_sort_order      *int
+	addmonitor_sort_order   *int
 	enabled                 *bool
 	interval_seconds        *int
 	addinterval_seconds     *int
@@ -15235,6 +15239,132 @@ func (m *ChannelMonitorMutation) ResetGroupName() {
 	delete(m.clearedFields, channelmonitor.FieldGroupName)
 }
 
+// SetMonitorGroupID sets the "monitor_group_id" field.
+func (m *ChannelMonitorMutation) SetMonitorGroupID(i int64) {
+	m.monitor_group_id = &i
+	m.addmonitor_group_id = nil
+}
+
+// MonitorGroupID returns the value of the "monitor_group_id" field in the mutation.
+func (m *ChannelMonitorMutation) MonitorGroupID() (r int64, exists bool) {
+	v := m.monitor_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorGroupID returns the old "monitor_group_id" field's value of the ChannelMonitor entity.
+// If the ChannelMonitor object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ChannelMonitorMutation) OldMonitorGroupID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorGroupID: %w", err)
+	}
+	return oldValue.MonitorGroupID, nil
+}
+
+// AddMonitorGroupID adds i to the "monitor_group_id" field.
+func (m *ChannelMonitorMutation) AddMonitorGroupID(i int64) {
+	if m.addmonitor_group_id != nil {
+		*m.addmonitor_group_id += i
+	} else {
+		m.addmonitor_group_id = &i
+	}
+}
+
+// AddedMonitorGroupID returns the value that was added to the "monitor_group_id" field in this mutation.
+func (m *ChannelMonitorMutation) AddedMonitorGroupID() (r int64, exists bool) {
+	v := m.addmonitor_group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMonitorGroupID clears the value of the "monitor_group_id" field.
+func (m *ChannelMonitorMutation) ClearMonitorGroupID() {
+	m.monitor_group_id = nil
+	m.addmonitor_group_id = nil
+	m.clearedFields[channelmonitor.FieldMonitorGroupID] = struct{}{}
+}
+
+// MonitorGroupIDCleared returns if the "monitor_group_id" field was cleared in this mutation.
+func (m *ChannelMonitorMutation) MonitorGroupIDCleared() bool {
+	_, ok := m.clearedFields[channelmonitor.FieldMonitorGroupID]
+	return ok
+}
+
+// ResetMonitorGroupID resets all changes to the "monitor_group_id" field.
+func (m *ChannelMonitorMutation) ResetMonitorGroupID() {
+	m.monitor_group_id = nil
+	m.addmonitor_group_id = nil
+	delete(m.clearedFields, channelmonitor.FieldMonitorGroupID)
+}
+
+// SetMonitorSortOrder sets the "monitor_sort_order" field.
+func (m *ChannelMonitorMutation) SetMonitorSortOrder(i int) {
+	m.monitor_sort_order = &i
+	m.addmonitor_sort_order = nil
+}
+
+// MonitorSortOrder returns the value of the "monitor_sort_order" field in the mutation.
+func (m *ChannelMonitorMutation) MonitorSortOrder() (r int, exists bool) {
+	v := m.monitor_sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorSortOrder returns the old "monitor_sort_order" field's value of the ChannelMonitor entity.
+// If the ChannelMonitor object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ChannelMonitorMutation) OldMonitorSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorSortOrder: %w", err)
+	}
+	return oldValue.MonitorSortOrder, nil
+}
+
+// AddMonitorSortOrder adds i to the "monitor_sort_order" field.
+func (m *ChannelMonitorMutation) AddMonitorSortOrder(i int) {
+	if m.addmonitor_sort_order != nil {
+		*m.addmonitor_sort_order += i
+	} else {
+		m.addmonitor_sort_order = &i
+	}
+}
+
+// AddedMonitorSortOrder returns the value that was added to the "monitor_sort_order" field in this mutation.
+func (m *ChannelMonitorMutation) AddedMonitorSortOrder() (r int, exists bool) {
+	v := m.addmonitor_sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetMonitorSortOrder resets all changes to the "monitor_sort_order" field.
+func (m *ChannelMonitorMutation) ResetMonitorSortOrder() {
+	m.monitor_sort_order = nil
+	m.addmonitor_sort_order = nil
+}
+
 // SetEnabled sets the "enabled" field.
 func (m *ChannelMonitorMutation) SetEnabled(b bool) {
 	m.enabled = &b
@@ -15840,7 +15970,7 @@ func (m *ChannelMonitorMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ChannelMonitorMutation) Fields() []string {
-	fields := make([]string, 0, 21)
+	fields := make([]string, 0, 23)
 	if m.created_at != nil {
 		fields = append(fields, channelmonitor.FieldCreatedAt)
 	}
@@ -15876,6 +16006,12 @@ func (m *ChannelMonitorMutation) Fields() []string {
 	}
 	if m.group_name != nil {
 		fields = append(fields, channelmonitor.FieldGroupName)
+	}
+	if m.monitor_group_id != nil {
+		fields = append(fields, channelmonitor.FieldMonitorGroupID)
+	}
+	if m.monitor_sort_order != nil {
+		fields = append(fields, channelmonitor.FieldMonitorSortOrder)
 	}
 	if m.enabled != nil {
 		fields = append(fields, channelmonitor.FieldEnabled)
@@ -15936,6 +16072,10 @@ func (m *ChannelMonitorMutation) Field(name string) (ent.Value, bool) {
 		return m.ExtraModels()
 	case channelmonitor.FieldGroupName:
 		return m.GroupName()
+	case channelmonitor.FieldMonitorGroupID:
+		return m.MonitorGroupID()
+	case channelmonitor.FieldMonitorSortOrder:
+		return m.MonitorSortOrder()
 	case channelmonitor.FieldEnabled:
 		return m.Enabled()
 	case channelmonitor.FieldIntervalSeconds:
@@ -15987,6 +16127,10 @@ func (m *ChannelMonitorMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldExtraModels(ctx)
 	case channelmonitor.FieldGroupName:
 		return m.OldGroupName(ctx)
+	case channelmonitor.FieldMonitorGroupID:
+		return m.OldMonitorGroupID(ctx)
+	case channelmonitor.FieldMonitorSortOrder:
+		return m.OldMonitorSortOrder(ctx)
 	case channelmonitor.FieldEnabled:
 		return m.OldEnabled(ctx)
 	case channelmonitor.FieldIntervalSeconds:
@@ -16098,6 +16242,20 @@ func (m *ChannelMonitorMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetGroupName(v)
 		return nil
+	case channelmonitor.FieldMonitorGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorGroupID(v)
+		return nil
+	case channelmonitor.FieldMonitorSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorSortOrder(v)
+		return nil
 	case channelmonitor.FieldEnabled:
 		v, ok := value.(bool)
 		if !ok {
@@ -16172,6 +16330,12 @@ func (m *ChannelMonitorMutation) AddedFields() []string {
 	if m.addaccount_id != nil {
 		fields = append(fields, channelmonitor.FieldAccountID)
 	}
+	if m.addmonitor_group_id != nil {
+		fields = append(fields, channelmonitor.FieldMonitorGroupID)
+	}
+	if m.addmonitor_sort_order != nil {
+		fields = append(fields, channelmonitor.FieldMonitorSortOrder)
+	}
 	if m.addinterval_seconds != nil {
 		fields = append(fields, channelmonitor.FieldIntervalSeconds)
 	}
@@ -16191,6 +16355,10 @@ func (m *ChannelMonitorMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case channelmonitor.FieldAccountID:
 		return m.AddedAccountID()
+	case channelmonitor.FieldMonitorGroupID:
+		return m.AddedMonitorGroupID()
+	case channelmonitor.FieldMonitorSortOrder:
+		return m.AddedMonitorSortOrder()
 	case channelmonitor.FieldIntervalSeconds:
 		return m.AddedIntervalSeconds()
 	case channelmonitor.FieldJitterSeconds:
@@ -16212,6 +16380,20 @@ func (m *ChannelMonitorMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddAccountID(v)
+		return nil
+	case channelmonitor.FieldMonitorGroupID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonitorGroupID(v)
+		return nil
+	case channelmonitor.FieldMonitorSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonitorSortOrder(v)
 		return nil
 	case channelmonitor.FieldIntervalSeconds:
 		v, ok := value.(int)
@@ -16248,6 +16430,9 @@ func (m *ChannelMonitorMutation) ClearedFields() []string {
 	if m.FieldCleared(channelmonitor.FieldGroupName) {
 		fields = append(fields, channelmonitor.FieldGroupName)
 	}
+	if m.FieldCleared(channelmonitor.FieldMonitorGroupID) {
+		fields = append(fields, channelmonitor.FieldMonitorGroupID)
+	}
 	if m.FieldCleared(channelmonitor.FieldLastCheckedAt) {
 		fields = append(fields, channelmonitor.FieldLastCheckedAt)
 	}
@@ -16276,6 +16461,9 @@ func (m *ChannelMonitorMutation) ClearField(name string) error {
 		return nil
 	case channelmonitor.FieldGroupName:
 		m.ClearGroupName()
+		return nil
+	case channelmonitor.FieldMonitorGroupID:
+		m.ClearMonitorGroupID()
 		return nil
 	case channelmonitor.FieldLastCheckedAt:
 		m.ClearLastCheckedAt()
@@ -16329,6 +16517,12 @@ func (m *ChannelMonitorMutation) ResetField(name string) error {
 		return nil
 	case channelmonitor.FieldGroupName:
 		m.ResetGroupName()
+		return nil
+	case channelmonitor.FieldMonitorGroupID:
+		m.ResetMonitorGroupID()
+		return nil
+	case channelmonitor.FieldMonitorSortOrder:
+		m.ResetMonitorSortOrder()
 		return nil
 	case channelmonitor.FieldEnabled:
 		m.ResetEnabled()
@@ -38707,6 +38901,7 @@ type RedeemCodeMutation struct {
 	_type            *string
 	value            *float64
 	addvalue         *float64
+	balance_source   *string
 	status           *string
 	used_at          *time.Time
 	notes            *string
@@ -38948,6 +39143,42 @@ func (m *RedeemCodeMutation) AddedValue() (r float64, exists bool) {
 func (m *RedeemCodeMutation) ResetValue() {
 	m.value = nil
 	m.addvalue = nil
+}
+
+// SetBalanceSource sets the "balance_source" field.
+func (m *RedeemCodeMutation) SetBalanceSource(s string) {
+	m.balance_source = &s
+}
+
+// BalanceSource returns the value of the "balance_source" field in the mutation.
+func (m *RedeemCodeMutation) BalanceSource() (r string, exists bool) {
+	v := m.balance_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBalanceSource returns the old "balance_source" field's value of the RedeemCode entity.
+// If the RedeemCode object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedeemCodeMutation) OldBalanceSource(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBalanceSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBalanceSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBalanceSource: %w", err)
+	}
+	return oldValue.BalanceSource, nil
+}
+
+// ResetBalanceSource resets all changes to the "balance_source" field.
+func (m *RedeemCodeMutation) ResetBalanceSource() {
+	m.balance_source = nil
 }
 
 // SetStatus sets the "status" field.
@@ -39424,7 +39655,7 @@ func (m *RedeemCodeMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RedeemCodeMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.code != nil {
 		fields = append(fields, redeemcode.FieldCode)
 	}
@@ -39433,6 +39664,9 @@ func (m *RedeemCodeMutation) Fields() []string {
 	}
 	if m.value != nil {
 		fields = append(fields, redeemcode.FieldValue)
+	}
+	if m.balance_source != nil {
+		fields = append(fields, redeemcode.FieldBalanceSource)
 	}
 	if m.status != nil {
 		fields = append(fields, redeemcode.FieldStatus)
@@ -39472,6 +39706,8 @@ func (m *RedeemCodeMutation) Field(name string) (ent.Value, bool) {
 		return m.GetType()
 	case redeemcode.FieldValue:
 		return m.Value()
+	case redeemcode.FieldBalanceSource:
+		return m.BalanceSource()
 	case redeemcode.FieldStatus:
 		return m.Status()
 	case redeemcode.FieldUsedBy:
@@ -39503,6 +39739,8 @@ func (m *RedeemCodeMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldType(ctx)
 	case redeemcode.FieldValue:
 		return m.OldValue(ctx)
+	case redeemcode.FieldBalanceSource:
+		return m.OldBalanceSource(ctx)
 	case redeemcode.FieldStatus:
 		return m.OldStatus(ctx)
 	case redeemcode.FieldUsedBy:
@@ -39548,6 +39786,13 @@ func (m *RedeemCodeMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetValue(v)
+		return nil
+	case redeemcode.FieldBalanceSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBalanceSource(v)
 		return nil
 	case redeemcode.FieldStatus:
 		v, ok := value.(string)
@@ -39722,6 +39967,9 @@ func (m *RedeemCodeMutation) ResetField(name string) error {
 		return nil
 	case redeemcode.FieldValue:
 		m.ResetValue()
+		return nil
+	case redeemcode.FieldBalanceSource:
+		m.ResetBalanceSource()
 		return nil
 	case redeemcode.FieldStatus:
 		m.ResetStatus()
@@ -48625,6 +48873,12 @@ type UserMutation struct {
 	role                          *string
 	balance                       *float64
 	addbalance                    *float64
+	free_balance                  *float64
+	addfree_balance               *float64
+	paid_balance                  *float64
+	addpaid_balance               *float64
+	free_balance_issued           *float64
+	addfree_balance_issued        *float64
 	frozen_balance                *float64
 	addfrozen_balance             *float64
 	concurrency                   *int
@@ -49074,6 +49328,174 @@ func (m *UserMutation) AddedBalance() (r float64, exists bool) {
 func (m *UserMutation) ResetBalance() {
 	m.balance = nil
 	m.addbalance = nil
+}
+
+// SetFreeBalance sets the "free_balance" field.
+func (m *UserMutation) SetFreeBalance(f float64) {
+	m.free_balance = &f
+	m.addfree_balance = nil
+}
+
+// FreeBalance returns the value of the "free_balance" field in the mutation.
+func (m *UserMutation) FreeBalance() (r float64, exists bool) {
+	v := m.free_balance
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFreeBalance returns the old "free_balance" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldFreeBalance(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFreeBalance is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFreeBalance requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFreeBalance: %w", err)
+	}
+	return oldValue.FreeBalance, nil
+}
+
+// AddFreeBalance adds f to the "free_balance" field.
+func (m *UserMutation) AddFreeBalance(f float64) {
+	if m.addfree_balance != nil {
+		*m.addfree_balance += f
+	} else {
+		m.addfree_balance = &f
+	}
+}
+
+// AddedFreeBalance returns the value that was added to the "free_balance" field in this mutation.
+func (m *UserMutation) AddedFreeBalance() (r float64, exists bool) {
+	v := m.addfree_balance
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFreeBalance resets all changes to the "free_balance" field.
+func (m *UserMutation) ResetFreeBalance() {
+	m.free_balance = nil
+	m.addfree_balance = nil
+}
+
+// SetPaidBalance sets the "paid_balance" field.
+func (m *UserMutation) SetPaidBalance(f float64) {
+	m.paid_balance = &f
+	m.addpaid_balance = nil
+}
+
+// PaidBalance returns the value of the "paid_balance" field in the mutation.
+func (m *UserMutation) PaidBalance() (r float64, exists bool) {
+	v := m.paid_balance
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaidBalance returns the old "paid_balance" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldPaidBalance(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaidBalance is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaidBalance requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaidBalance: %w", err)
+	}
+	return oldValue.PaidBalance, nil
+}
+
+// AddPaidBalance adds f to the "paid_balance" field.
+func (m *UserMutation) AddPaidBalance(f float64) {
+	if m.addpaid_balance != nil {
+		*m.addpaid_balance += f
+	} else {
+		m.addpaid_balance = &f
+	}
+}
+
+// AddedPaidBalance returns the value that was added to the "paid_balance" field in this mutation.
+func (m *UserMutation) AddedPaidBalance() (r float64, exists bool) {
+	v := m.addpaid_balance
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPaidBalance resets all changes to the "paid_balance" field.
+func (m *UserMutation) ResetPaidBalance() {
+	m.paid_balance = nil
+	m.addpaid_balance = nil
+}
+
+// SetFreeBalanceIssued sets the "free_balance_issued" field.
+func (m *UserMutation) SetFreeBalanceIssued(f float64) {
+	m.free_balance_issued = &f
+	m.addfree_balance_issued = nil
+}
+
+// FreeBalanceIssued returns the value of the "free_balance_issued" field in the mutation.
+func (m *UserMutation) FreeBalanceIssued() (r float64, exists bool) {
+	v := m.free_balance_issued
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFreeBalanceIssued returns the old "free_balance_issued" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldFreeBalanceIssued(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFreeBalanceIssued is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFreeBalanceIssued requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFreeBalanceIssued: %w", err)
+	}
+	return oldValue.FreeBalanceIssued, nil
+}
+
+// AddFreeBalanceIssued adds f to the "free_balance_issued" field.
+func (m *UserMutation) AddFreeBalanceIssued(f float64) {
+	if m.addfree_balance_issued != nil {
+		*m.addfree_balance_issued += f
+	} else {
+		m.addfree_balance_issued = &f
+	}
+}
+
+// AddedFreeBalanceIssued returns the value that was added to the "free_balance_issued" field in this mutation.
+func (m *UserMutation) AddedFreeBalanceIssued() (r float64, exists bool) {
+	v := m.addfree_balance_issued
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetFreeBalanceIssued resets all changes to the "free_balance_issued" field.
+func (m *UserMutation) ResetFreeBalanceIssued() {
+	m.free_balance_issued = nil
+	m.addfree_balance_issued = nil
 }
 
 // SetFrozenBalance sets the "frozen_balance" field.
@@ -50626,7 +51048,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 25)
+	fields := make([]string, 0, 28)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -50647,6 +51069,15 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.balance != nil {
 		fields = append(fields, user.FieldBalance)
+	}
+	if m.free_balance != nil {
+		fields = append(fields, user.FieldFreeBalance)
+	}
+	if m.paid_balance != nil {
+		fields = append(fields, user.FieldPaidBalance)
+	}
+	if m.free_balance_issued != nil {
+		fields = append(fields, user.FieldFreeBalanceIssued)
 	}
 	if m.frozen_balance != nil {
 		fields = append(fields, user.FieldFrozenBalance)
@@ -50724,6 +51155,12 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.Role()
 	case user.FieldBalance:
 		return m.Balance()
+	case user.FieldFreeBalance:
+		return m.FreeBalance()
+	case user.FieldPaidBalance:
+		return m.PaidBalance()
+	case user.FieldFreeBalanceIssued:
+		return m.FreeBalanceIssued()
 	case user.FieldFrozenBalance:
 		return m.FrozenBalance()
 	case user.FieldConcurrency:
@@ -50783,6 +51220,12 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldRole(ctx)
 	case user.FieldBalance:
 		return m.OldBalance(ctx)
+	case user.FieldFreeBalance:
+		return m.OldFreeBalance(ctx)
+	case user.FieldPaidBalance:
+		return m.OldPaidBalance(ctx)
+	case user.FieldFreeBalanceIssued:
+		return m.OldFreeBalanceIssued(ctx)
 	case user.FieldFrozenBalance:
 		return m.OldFrozenBalance(ctx)
 	case user.FieldConcurrency:
@@ -50876,6 +51319,27 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBalance(v)
+		return nil
+	case user.FieldFreeBalance:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFreeBalance(v)
+		return nil
+	case user.FieldPaidBalance:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaidBalance(v)
+		return nil
+	case user.FieldFreeBalanceIssued:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFreeBalanceIssued(v)
 		return nil
 	case user.FieldFrozenBalance:
 		v, ok := value.(float64)
@@ -51014,6 +51478,15 @@ func (m *UserMutation) AddedFields() []string {
 	if m.addbalance != nil {
 		fields = append(fields, user.FieldBalance)
 	}
+	if m.addfree_balance != nil {
+		fields = append(fields, user.FieldFreeBalance)
+	}
+	if m.addpaid_balance != nil {
+		fields = append(fields, user.FieldPaidBalance)
+	}
+	if m.addfree_balance_issued != nil {
+		fields = append(fields, user.FieldFreeBalanceIssued)
+	}
 	if m.addfrozen_balance != nil {
 		fields = append(fields, user.FieldFrozenBalance)
 	}
@@ -51039,6 +51512,12 @@ func (m *UserMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case user.FieldBalance:
 		return m.AddedBalance()
+	case user.FieldFreeBalance:
+		return m.AddedFreeBalance()
+	case user.FieldPaidBalance:
+		return m.AddedPaidBalance()
+	case user.FieldFreeBalanceIssued:
+		return m.AddedFreeBalanceIssued()
 	case user.FieldFrozenBalance:
 		return m.AddedFrozenBalance()
 	case user.FieldConcurrency:
@@ -51064,6 +51543,27 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddBalance(v)
+		return nil
+	case user.FieldFreeBalance:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFreeBalance(v)
+		return nil
+	case user.FieldPaidBalance:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPaidBalance(v)
+		return nil
+	case user.FieldFreeBalanceIssued:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFreeBalanceIssued(v)
 		return nil
 	case user.FieldFrozenBalance:
 		v, ok := value.(float64)
@@ -51186,6 +51686,15 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldBalance:
 		m.ResetBalance()
+		return nil
+	case user.FieldFreeBalance:
+		m.ResetFreeBalance()
+		return nil
+	case user.FieldPaidBalance:
+		m.ResetPaidBalance()
+		return nil
+	case user.FieldFreeBalanceIssued:
+		m.ResetFreeBalanceIssued()
 		return nil
 	case user.FieldFrozenBalance:
 		m.ResetFrozenBalance()

@@ -75,6 +75,14 @@ func (ChannelMonitor) Fields() []ent.Field {
 			Optional().
 			Default("").
 			MaxLen(100),
+		// monitor_group_id / monitor_sort_order are the administrator-managed
+		// display grouping fields. The legacy group_name is retained for
+		// backward compatibility with existing channel metadata.
+		field.Int64("monitor_group_id").
+			Optional().
+			Nillable(),
+		field.Int("monitor_sort_order").
+			Default(0),
 		field.Bool("enabled").
 			Default(true),
 		field.Int("interval_seconds").
@@ -131,6 +139,7 @@ func (ChannelMonitor) Indexes() []ent.Index {
 		index.Fields("provider"),
 		index.Fields("provider", "api_mode"),
 		index.Fields("group_name"),
+		index.Fields("monitor_group_id", "monitor_sort_order"),
 		index.Fields("template_id"),
 		index.Fields("account_id"),
 	}

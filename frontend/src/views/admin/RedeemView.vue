@@ -141,6 +141,13 @@
             </span>
           </template>
 
+          <template #cell-balance_source="{ value, row }">
+            <span v-if="row.type === 'balance' || row.type === 'admin_balance'" class="text-sm text-gray-600 dark:text-gray-300">
+              {{ value === 'paid' ? t('admin.redeem.paidBalance') : t('admin.redeem.freeBalance') }}
+            </span>
+            <span v-else class="text-sm text-gray-400">-</span>
+          </template>
+
           <template #cell-status="{ value }">
             <span
               :class="[
@@ -304,6 +311,10 @@
                 required
                 class="input"
               />
+            </div>
+            <div v-if="generateForm.type === 'balance'">
+              <label class="input-label">{{ t('admin.redeem.balanceSource') }}</label>
+              <Select v-model="generateForm.balance_source" :options="balanceSourceOptions" />
             </div>
             <!-- 邀请码类型：显示提示信息 -->
             <div v-if="generateForm.type === 'invitation'" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
@@ -732,6 +743,7 @@ const columns = computed<Column[]>(() => [
   { key: 'code', label: t('admin.redeem.columns.code') },
   { key: 'type', label: t('admin.redeem.columns.type'), sortable: true },
   { key: 'value', label: t('admin.redeem.columns.value'), sortable: true },
+  { key: 'balance_source', label: t('admin.redeem.columns.balanceSource') },
   { key: 'status', label: t('admin.redeem.columns.status'), sortable: true },
   { key: 'used_by', label: t('admin.redeem.columns.usedBy') },
   { key: 'used_at', label: t('admin.redeem.columns.usedAt'), sortable: true },
@@ -744,6 +756,11 @@ const typeOptions = computed(() => [
   { value: 'concurrency', label: t('admin.redeem.concurrency') },
   { value: 'subscription', label: t('admin.redeem.subscription') },
   { value: 'invitation', label: t('admin.redeem.invitation') }
+])
+
+const balanceSourceOptions = computed(() => [
+  { value: 'free', label: t('admin.redeem.freeBalance') },
+  { value: 'paid', label: t('admin.redeem.paidBalance') }
 ])
 
 const filterTypeOptions = computed(() => [
@@ -838,6 +855,7 @@ const redeemCodeExpiryOptions = computed<{ value: RedeemCodeExpiryOption; label:
 const generateForm = reactive({
   type: 'balance' as RedeemCodeType,
   value: 10,
+  balance_source: 'free' as 'free' | 'paid',
   count: 1,
   group_id: null as number | null,
   validity_days: 30,
@@ -1046,7 +1064,8 @@ const handleGenerateCodes = async () => {
       generateForm.value,
       generateForm.type === 'subscription' ? generateForm.group_id : undefined,
       generateForm.type === 'subscription' ? generateForm.validity_days : undefined,
-      expiresInDays
+      expiresInDays,
+      generateForm.type === 'balance' ? generateForm.balance_source : 'free'
     )
     showGenerateDialog.value = false
     generatedCodes.value = result

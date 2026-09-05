@@ -451,6 +451,8 @@ type OpenAIGatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	recoveryCoordinator   *accountRecoveryCoordinator
+	affiliateService      *AffiliateService
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
 
@@ -491,6 +493,12 @@ type OpenAIGatewayService struct {
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
+}
+
+func (s *OpenAIGatewayService) SetAffiliateService(affiliateService *AffiliateService) {
+	if s != nil {
+		s.affiliateService = affiliateService
+	}
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -555,11 +563,19 @@ func NewOpenAIGatewayService(
 		balanceNotifyService:  balanceNotifyService,
 		settingService:        settingService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		recoveryCoordinator:   newAccountRecoveryCoordinator(accountRepo),
 		liveAttestation:       liveattestation.NewProvider(),
 		liveAttestationCipher: newLiveAttestationCipher(cfg),
 		responseHeaderFilter:  compileResponseHeaderFilter(cfg),
 		codexSnapshotThrottle: newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
 		openaiModelTransient:  newOpenAIAccountModelTransientState(openAIModelTransientDefaultMax),
+	}
+	if svc.recoveryCoordinator != nil && schedulerSnapshot != nil {
+		svc.recoveryCoordinator.setOnRecovered(func(ctx context.Context, accountID int64) {
+			if err := schedulerSnapshot.RefreshRecoveredAccount(ctx, accountID); err != nil {
+				slog.Warn("openai_account_recovery_snapshot_refresh_failed", "account_id", accountID, "error", err)
+			}
+		})
 	}
 	if rateLimitService != nil {
 		rateLimitService.SetAccountRuntimeBlocker(svc)
@@ -674,6 +690,7 @@ func (s *OpenAIGatewayService) billingDeps() *billingDeps {
 		deferredService:       s.deferredService,
 		balanceNotifyService:  s.balanceNotifyService,
 		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
+		affiliateService:      s.affiliateService,
 	}
 }
 

@@ -126,7 +126,9 @@ export const FeatureFlags = {
   }),
   affiliate: defineFlag({
     key: 'affiliate_enabled',
-    mode: 'opt-in',
+    // Keep the local preview and older deployments visible until the backend
+    // explicitly disables the affiliate feature.
+    mode: 'opt-out',
     label: 'Affiliate',
   }),
 } as const

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { announcementsAPI } from '@/api'
 import type { UserAnnouncement } from '@/types'
+import { getLocalPreviewAnnouncement, isLocalPreviewSession } from '@/utils/localPreview'
 
 const THROTTLE_MS = 20 * 60 * 1000 // 20 minutes
 
@@ -30,6 +31,13 @@ export const useAnnouncementStore = defineStore('announcements', () => {
 
     // Set immediately to prevent concurrent duplicate requests
     lastFetchTime.value = now
+
+    if (isLocalPreviewSession()) {
+      const localAnnouncement = getLocalPreviewAnnouncement()
+      announcements.value = localAnnouncement ? [localAnnouncement] : []
+      loading.value = false
+      return
+    }
 
     try {
       loading.value = true

@@ -11,14 +11,34 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 )
 
 type upstreamModelMetadataRepoStub struct {
 	AccountRepository
-	accountID int64
-	updates   map[string]any
-	err       error
+	accountID          int64
+	updates            map[string]any
+	credentialUpdates  []map[string]any
+	events             *[]string
+	err                error
+	credentialUpdateErr error
+}
+
+type syncMappingHTTPUpstream struct {
+	response *http.Response
+	events   *[]string
+}
+
+func (u *syncMappingHTTPUpstream) Do(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	if u.events != nil {
+		*u.events = append(*u.events, "upstream")
+	}
+	return u.response, nil
+}
+
+func (u *syncMappingHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
 func headerValuesEqualFold(header http.Header, name string) []string {
@@ -33,7 +53,19 @@ func headerValuesEqualFold(header http.Header, name string) []string {
 func (r *upstreamModelMetadataRepoStub) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
 	r.accountID = id
 	r.updates = updates
+	if r.events != nil {
+		*r.events = append(*r.events, "extra")
+	}
 	return r.err
+}
+
+func (r *upstreamModelMetadataRepoStub) UpdateCredentials(_ context.Context, id int64, credentials map[string]any) error {
+	r.accountID = id
+	r.credentialUpdates = append(r.credentialUpdates, shallowCopyMap(credentials))
+	if r.events != nil {
+		*r.events = append(*r.events, "credentials")
+	}
+	return r.credentialUpdateErr
 }
 
 func upstreamModelSyncTestConfig() *config.Config {
@@ -611,6 +643,72 @@ func TestSyncUpstreamModelCatalogRequiresConfiguredModelsForUnsupportedListEndpo
 	require.Len(t, upstream.requests, 1)
 }
 
+func TestSyncUpstreamModelMappingClearsBeforeFetchingAndReplacesOnSuccess(t *testing.T) {
+	events := make([]string, 0, 4)
+	repo := &upstreamModelMetadataRepoStub{events: &events}
+	upstream := &syncMappingHTTPUpstream{
+		events: &events,
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{"data":[{
+				"id":"live-model",
+				"display_name":"Live Model",
+				"reasoning":false,
+				"input_modalities":["text"],
+				"context_window":100000
+			}]}`)),
+		},
+	}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+	account := &Account{
+		ID:       101,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":       "key",
+			"base_url":      "https://provider.example/v1",
+			"stale-model":   "should-stay-unrelated",
+			"model_mapping": map[string]any{"old-model": "old-model"},
+		},
+	}
+
+	catalog, err := svc.SyncUpstreamModelMapping(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, []string{"live-model"}, catalog.Models)
+	require.Equal(t, []string{"credentials", "upstream", "extra", "credentials"}, events)
+	require.Len(t, repo.credentialUpdates, 2)
+	require.Empty(t, repo.credentialUpdates[0]["model_mapping"])
+	require.Equal(t, map[string]any{"live-model": "live-model"}, repo.credentialUpdates[1]["model_mapping"])
+	require.Equal(t, map[string]any{"live-model": "live-model"}, account.Credentials["model_mapping"])
+}
+
+func TestSyncUpstreamModelMappingLeavesExplicitlyEmptyMappingAfterFailure(t *testing.T) {
+	events := make([]string, 0, 2)
+	repo := &upstreamModelMetadataRepoStub{events: &events}
+	upstream := &syncMappingHTTPUpstream{
+		events: &events,
+		response: &http.Response{
+			StatusCode: http.StatusBadGateway,
+			Body:       io.NopCloser(strings.NewReader(`{"error":"upstream unavailable"}`)),
+		},
+	}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+	account := &Account{
+		ID:          102,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "key", "model_mapping": map[string]any{"old-model": "old-model"}},
+	}
+
+	_, err := svc.SyncUpstreamModelMapping(context.Background(), account)
+	require.Error(t, err)
+	require.Equal(t, []string{"credentials", "upstream"}, events)
+	require.Len(t, repo.credentialUpdates, 1)
+	require.Empty(t, repo.credentialUpdates[0]["model_mapping"])
+	require.Equal(t, map[string]any{}, account.Credentials["model_mapping"])
+}
+
 // Scenario: 完整上游模型清单优先保存能力。
 func TestSyncUpstreamModelCatalogPrefersDirectUpstreamMetadata(t *testing.T) {
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
@@ -765,10 +863,7 @@ func TestSyncUpstreamModelCatalogDoesNotOverwriteSnapshotWhenRegistryFails(t *te
 	require.NoError(t, err)
 	require.Equal(t, []string{"x-preview-f-free"}, catalog.Models)
 	require.Empty(t, catalog.Metadata)
-	require.Equal(t, []UpstreamModelSyncWarning{{
-		Code:    UpstreamModelMetadataIncompleteCode,
-		Message: "Model IDs were synced, but capability metadata is incomplete.",
-	}}, catalog.Warnings)
+	require.Empty(t, catalog.Warnings, "model IDs remain usable when optional metadata enrichment fails")
 	require.Nil(t, repo.updates, "a failed metadata enrichment must not erase a previously saved snapshot")
 }
 
@@ -795,7 +890,7 @@ func TestSyncUpstreamModelCatalogDoesNotPersistPartialMetadataWhenRegistryFails(
 	require.NoError(t, err)
 	require.Equal(t, []string{"partially-described-model"}, catalog.Models)
 	require.Equal(t, "Partial Model", catalog.Metadata["partially-described-model"].DisplayName)
-	require.Equal(t, UpstreamModelMetadataIncompleteCode, catalog.Warnings[0].Code)
+	require.Empty(t, catalog.Warnings, "partial upstream metadata is not a model sync failure")
 	require.Nil(t, repo.updates, "partial metadata must not replace a more complete persisted snapshot")
 }
 

@@ -183,6 +183,69 @@ func TestAccountHandlerGetAvailableModels_OpenAIOAuthUsesExplicitModelMapping(t 
 	require.Equal(t, "gpt-5", resp.Data[0].ID)
 }
 
+func TestAccountHandlerGetAvailableModels_ExplicitEmptyMappingReturnsNoModels(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       48,
+			Name:     "empty-upstream-models",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{},
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/48/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Empty(t, resp.Data)
+}
+
+func TestAccountHandlerGetAvailableModels_UsesCustomConfiguredModelIDs(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       47,
+			Name:     "custom-upstream",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"public-z": "vendor-z",
+					"public-a": "vendor-a",
+				},
+			},
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/47/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, []string{"public-a", "public-z"}, []string{resp.Data[0].ID, resp.Data[1].ID})
+}
+
 func TestAccountHandlerGetAvailableModels_OpenAIOAuthPassthroughFallsBackToDefaults(t *testing.T) {
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
@@ -523,6 +586,5 @@ func TestAccountHandlerSyncUpstreamModels_MetadataEnrichmentFailureReturnsWarnin
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, []string{"x-preview-f-free"}, resp.Data.Models)
-	require.Len(t, resp.Data.Warnings, 1)
-	require.Equal(t, "upstream_model_metadata_incomplete", resp.Data.Warnings[0].Code)
+	require.Empty(t, resp.Data.Warnings, "metadata enrichment is optional")
 }

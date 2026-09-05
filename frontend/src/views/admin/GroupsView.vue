@@ -49,6 +49,40 @@
             class="flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-3 lg:w-auto"
           >
             <button
+              type="button"
+              @click="syncAllUpstreamModels"
+              :disabled="syncAllUpstreamModelsLoading"
+              class="btn btn-secondary inline-flex items-center gap-1"
+              :title="t('admin.groups.syncAllUpstreamModels')"
+            >
+              <Icon name="sync" size="md" :class="syncAllUpstreamModelsLoading ? 'animate-spin' : ''" />
+              <span class="hidden md:inline">
+                {{ syncAllUpstreamModelsLoading ? t('admin.groups.syncAllUpstreamModelsLoading') : t('admin.groups.syncAllUpstreamModels') }}
+              </span>
+            </button>
+
+            <button
+              v-if="selectedGroupIds.size > 0"
+              type="button"
+              @click="batchTestSelectedGroups"
+              :disabled="batchTestSelectedGroupsLoading"
+              class="btn btn-secondary inline-flex items-center gap-1"
+              :title="t('admin.groups.accounts.testSelectedGroups')"
+            >
+              <Icon
+                name="play"
+                size="md"
+                :class="batchTestSelectedGroupsLoading ? 'animate-pulse' : ''"
+              />
+              <span>
+                {{
+                  batchTestSelectedGroupsLoading
+                    ? t('admin.groups.accounts.testingGroups')
+                    : t('admin.groups.accounts.testSelectedGroups', { count: selectedGroupIds.size })
+                }}
+              </span>
+            </button>
+            <button
               @click="loadGroups"
               :disabled="loading"
               class="btn btn-secondary"
@@ -118,14 +152,23 @@
           :data="groups"
           :loading="loading"
           :server-side-sort="true"
+          :expanded-row-keys="expandedGroupIds"
           default-sort-key="sort_order"
           default-sort-order="asc"
           @sort="handleSort"
         >
-          <template #cell-name="{ value }">
-            <span class="font-medium text-gray-900 dark:text-white">{{
-              value
-            }}</span>
+          <template #cell-name="{ value, row }">
+            <label class="inline-flex min-w-0 items-center gap-2">
+              <input
+                type="checkbox"
+                :checked="isGroupSelected(row.id)"
+                :aria-label="t('admin.groups.accounts.selectGroup', { name: value })"
+                @change.stop="toggleGroupSelection(row.id)"
+              />
+              <span class="min-w-0 truncate font-medium text-gray-900 dark:text-white">{{
+                value
+              }}</span>
+            </label>
           </template>
 
           <template #cell-id="{ value }">
@@ -271,6 +314,27 @@
 
           <template #cell-account_count="{ row }">
             <div class="space-y-0.5 text-xs">
+              <div class="mb-1 flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400"
+                  :title="t(isGroupExpanded(row.id) ? 'admin.groups.accounts.collapse' : 'admin.groups.accounts.expand')"
+                  @click.stop="toggleGroupAccounts(row)"
+                >
+                  <Icon :name="isGroupExpanded(row.id) ? 'chevronDown' : 'chevronRight'" size="xs" />
+                  <span>{{ t('admin.groups.accounts.manage') }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-md border border-primary-200 px-1.5 py-0.5 text-primary-600 hover:bg-primary-50 dark:border-primary-800 dark:text-primary-400 dark:hover:bg-primary-950/40"
+                  :title="t('admin.groups.accounts.add')"
+                  @click.stop="openGroupAccountDialog(row)"
+                >
+                  <Icon name="plus" size="xs" />
+                  <span>{{ t('admin.groups.accounts.add') }}</span>
+                </button>
+                <span v-if="groupAccountsLoading[row.id]" class="text-gray-400">...</span>
+              </div>
               <div>
                 <span class="text-gray-500 dark:text-gray-400">{{
                   t("admin.groups.accountsAvailable")
@@ -309,6 +373,137 @@
                   class="ml-1 inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-800 dark:bg-dark-600 dark:text-gray-300"
                   >{{ t("admin.groups.accountsUnit") }}</span
                 >
+              </div>
+            </div>
+          </template>
+
+          <template #expanded-row="{ row }">
+            <div class="min-w-0 max-w-full overflow-hidden border-y border-primary-100 bg-primary-50/30 px-4 py-4 dark:border-primary-900/40 dark:bg-primary-950/20 sm:px-6">
+              <div class="min-w-0 w-full">
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('admin.groups.accounts.title') }}</div>
+                    <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ row.name }}</div>
+                  </div>
+                  <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                    <label v-if="getGroupAccounts(row.id).length" class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        :checked="allGroupAccountsSelected(row.id)"
+                        :indeterminate="someGroupAccountsSelected(row.id) && !allGroupAccountsSelected(row.id)"
+                        :aria-label="t('admin.groups.accounts.selectAll')"
+                        @change.stop="toggleAllGroupAccounts(row.id)"
+                      />
+                      {{ t('admin.groups.accounts.selectAll') }}
+                    </label>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm inline-flex items-center gap-1"
+                      :disabled="selectedGroupAccountIds(row.id).length === 0 || batchStatusLoading[row.id]"
+                      @click.stop="batchUpdateGroupAccountStatus(row, 'active')"
+                    >
+                      <Icon name="checkCircle" size="xs" />
+                      {{ t('admin.groups.accounts.enableSelected') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm inline-flex items-center gap-1"
+                      :disabled="selectedGroupAccountIds(row.id).length === 0 || batchStatusLoading[row.id]"
+                      @click.stop="batchUpdateGroupAccountStatus(row, 'inactive')"
+                    >
+                      <Icon name="x" size="xs" />
+                      {{ t('admin.groups.accounts.disableSelected') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm inline-flex items-center gap-1"
+                      :disabled="selectedGroupAccountIds(row.id).length === 0 || batchTestLoading[row.id]"
+                      @click.stop="batchTestGroupAccounts(row)"
+                    >
+                      <Icon name="play" size="xs" />
+                      {{ batchTestLoading[row.id] ? t('admin.groups.accounts.testing') : t('admin.groups.accounts.testSelected') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm inline-flex items-center gap-1"
+                      @click.stop="openGroupAccountDialog(row)"
+                    >
+                      <Icon name="plus" size="xs" />
+                      {{ t('admin.groups.accounts.add') }}
+                    </button>
+                  </div>
+                </div>
+                <div v-if="groupAccountsLoading[row.id]" class="py-4 text-sm text-gray-400">{{ t('admin.groups.accounts.loading') }}</div>
+                <div v-else-if="getGroupAccounts(row.id).length === 0" class="rounded-lg border border-dashed border-gray-300 bg-white/70 px-4 py-5 text-center text-sm text-gray-400 dark:border-dark-600 dark:bg-dark-800/50">{{ t('admin.groups.accounts.empty') }}</div>
+                <TransitionGroup v-else name="nested-account" move-class="nested-account-move" tag="div" class="grid min-w-0 max-w-full grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] items-stretch gap-2 pb-2">
+                  <div
+                    v-for="account in getGroupAccounts(row.id)"
+                    :key="account.id"
+                    class="flex min-h-[118px] min-w-0 max-w-full flex-col justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md dark:border-dark-600 dark:bg-dark-700"
+                  >
+                    <div class="min-w-0">
+                      <div class="flex min-w-0 items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          :checked="isGroupAccountSelected(row.id, account.id)"
+                          :aria-label="t('admin.groups.accounts.selectAccount', { name: account.name })"
+                          @change.stop="toggleGroupAccountSelection(row.id, account.id)"
+                        />
+                        <div class="min-w-0 flex-1 truncate text-xs font-medium text-gray-700 dark:text-gray-200" :title="account.name">{{ account.name }}</div>
+                      </div>
+                      <div class="mt-0.5 truncate text-[11px] text-gray-400">#{{ account.id }} · {{ account.platform }}</div>
+                      <div class="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500">
+                        <span class="shrink-0">{{ t('admin.accounts.columns.upstreamBillingRate') }}:</span>
+                        <UpstreamBillingRateCell
+                          :account="account"
+                          :now="upstreamBillingNow"
+                          :probing="probingUpstreamBilling.has(account.id)"
+                          @probe="handleNestedUpstreamBillingProbe(row, account)"
+                        />
+                      </div>
+                    </div>
+                    <div class="mt-1.5 flex items-center justify-between gap-1">
+                      <span :class="['badge whitespace-nowrap text-[10px]', account.status === 'active' ? 'badge-success' : 'badge-danger']">{{ t('admin.accounts.status.' + account.status) }}</span>
+                      <label class="flex shrink-0 items-center gap-1 text-gray-500 dark:text-gray-400" :title="t('admin.groups.accounts.priority')">
+                        <input
+                          v-model.number="priorityDrafts[groupPriorityKey(row.id, account.id)]"
+                          type="number"
+                          min="1"
+                          step="1"
+                          class="h-7 w-12 rounded border border-gray-300 bg-white px-0.5 py-0.5 text-center text-xs font-medium text-gray-700 dark:border-dark-500 dark:bg-dark-800 dark:text-gray-200"
+                          @change.stop="updateAccountPriority(row.id, account, priorityDrafts[groupPriorityKey(row.id, account.id)])"
+                        />
+                        <span class="flex flex-col">
+                          <button type="button" class="leading-none text-gray-400 hover:text-primary-600 disabled:opacity-30" :disabled="Number(priorityDrafts[groupPriorityKey(row.id, account.id)] ?? getAccountGroupPriority(account, row.id)) <= 1" :title="t('admin.groups.accounts.priorityUp')" @click.stop="adjustAccountPriority(row.id, account, -1)">
+                            <Icon name="chevronUp" size="xs" />
+                          </button>
+                          <button type="button" class="leading-none text-gray-400 hover:text-primary-600" :title="t('admin.groups.accounts.priorityDown')" @click.stop="adjustAccountPriority(row.id, account, 1)">
+                            <Icon name="chevronDown" size="xs" />
+                          </button>
+                        </span>
+                      </label>
+                    </div>
+                    <div v-if="batchTestResults[account.id]" class="mt-1 truncate text-[10px]" :class="batchTestResults[account.id].success ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'" :title="batchTestResults[account.id].message">
+                      {{ batchTestResults[account.id].message }}
+                    </div>
+                    <div class="mt-1.5 flex items-center justify-end gap-1 border-t border-gray-100 pt-1 dark:border-dark-600">
+                      <div class="flex shrink-0 items-center gap-0.5 border-l border-gray-200 pl-1.5 dark:border-dark-600">
+                        <button type="button" class="rounded p-1 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-dark-600" :title="t('admin.groups.accounts.testConnection')" @click.stop="openNestedAccountTest(account)">
+                          <Icon name="play" size="xs" />
+                        </button>
+                        <button type="button" class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-600" :title="t('admin.groups.accounts.edit')" @click.stop="openAccountEditor(account)">
+                          <Icon name="edit" size="xs" />
+                        </button>
+                        <button type="button" class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-amber-600 dark:hover:bg-dark-600" :title="t(account.status === 'active' ? 'admin.groups.accounts.disable' : 'admin.groups.accounts.enable')" @click.stop="toggleNestedAccountStatus(account)">
+                          <Icon name="checkCircle" size="xs" />
+                        </button>
+                        <button type="button" class="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20" :title="t('admin.groups.accounts.remove')" @click.stop="removeAccountFromGroup(row, account)">
+                          <Icon name="x" size="xs" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </TransitionGroup>
               </div>
             </div>
           </template>
@@ -463,11 +658,70 @@
       </template>
     </TablePageLayout>
 
+    <BaseDialog
+      :show="showGroupAccountDialog"
+      :title="t('admin.groups.accounts.addTitle', { name: accountDialogGroup?.name || '' })"
+      width="normal"
+      @close="closeGroupAccountDialog"
+    >
+      <div class="space-y-4">
+        <input v-model="accountDialogSearch" type="search" class="input" :placeholder="t('admin.groups.accounts.search')" />
+        <div v-if="accountDialogLoading" class="py-8 text-center text-sm text-gray-500">{{ t('admin.groups.accounts.loading') }}</div>
+        <div v-else-if="filteredAccountDialogCandidates.length === 0" class="py-8 text-center text-sm text-gray-500">{{ t('admin.groups.accounts.noCandidates') }}</div>
+        <div v-else class="max-h-80 space-y-2 overflow-y-auto">
+          <section v-for="section in groupedAccountDialogCandidates" :key="section.key" class="overflow-hidden rounded-md border border-gray-200 dark:border-dark-700">
+            <button type="button" class="flex w-full items-center justify-between gap-2 bg-gray-50 px-2.5 py-2 text-left text-xs font-medium text-gray-600 hover:bg-gray-100 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700" @click="toggleAccountDialogSection(section.key)">
+              <span class="flex min-w-0 items-center gap-1.5"><Icon :name="isAccountDialogSectionExpanded(section.key) ? 'chevronDown' : 'chevronRight'" size="xs" /><span class="truncate">{{ section.label }}</span></span>
+              <span class="shrink-0">{{ section.accounts.length }}</span>
+            </button>
+            <div v-if="isAccountDialogSectionExpanded(section.key)" class="space-y-1 p-1.5">
+              <div v-for="platformSection in section.platforms" :key="platformSection.key" class="overflow-hidden rounded border border-gray-100 dark:border-dark-700">
+                <button type="button" class="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-[11px] font-medium text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-dark-700" @click="toggleAccountDialogPlatform(platformSection.key)">
+                  <span class="flex min-w-0 items-center gap-1.5"><Icon :name="isAccountDialogPlatformExpanded(platformSection.key) ? 'chevronDown' : 'chevronRight'" size="xs" /><PlatformIcon :platform="platformSection.platform" size="xs" /><span class="truncate">{{ platformSection.label }}</span></span>
+                  <span class="shrink-0">{{ platformSection.accounts.length }}</span>
+                </button>
+                <div v-if="isAccountDialogPlatformExpanded(platformSection.key)" class="divide-y divide-gray-100 dark:divide-dark-700">
+                  <label v-for="account in platformSection.accounts" :key="account.id" class="flex min-w-0 cursor-pointer flex-wrap items-center gap-2 px-2 py-2 hover:bg-gray-50 dark:hover:bg-dark-700">
+                    <input type="checkbox" :checked="accountDialogSelected.has(account.id)" @change="toggleAccountDialogSelection(account.id)" />
+                    <span class="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-gray-200" :title="account.name">{{ account.name }}</span>
+                    <span class="shrink-0 text-xs text-gray-400">{{ t('admin.groups.accounts.priority') }} {{ getAccountGroupPriority(account, accountDialogGroup?.id || 0) }}</span>
+                    <span class="flex basis-full items-center gap-1 pl-6 text-[10px] text-gray-400"><span>{{ t('admin.accounts.columns.upstreamBillingRate') }}:</span><UpstreamBillingRateCell :account="account" :now="upstreamBillingNow" :probing="probingUpstreamBilling.has(account.id)" @probe="handleDialogUpstreamBillingProbe(account)" /></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+        <div class="text-sm text-gray-500">{{ t('admin.groups.accounts.selected', { count: accountDialogSelected.size }) }}</div>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeGroupAccountDialog">{{ t('common.cancel') }}</button>
+        <button type="button" class="btn btn-primary" :disabled="accountDialogSaving || accountDialogSelected.size === 0" @click="addAccountsToGroup">
+          {{ accountDialogSaving ? t('common.loading') : t('common.save') }}
+        </button>
+      </template>
+    </BaseDialog>
+
+    <EditAccountModal
+      :show="showNestedAccountEditor"
+      :account="editingNestedAccount"
+      :proxies="accountEditProxies"
+      :groups="accountEditGroups.length ? accountEditGroups : groups"
+      @close="showNestedAccountEditor = false"
+      @updated="handleNestedAccountUpdated"
+    />
+
+    <AccountTestModal
+      :show="showNestedAccountTest"
+      :account="testingNestedAccount"
+      @close="closeNestedAccountTest"
+    />
+
     <!-- Create Group Modal -->
     <BaseDialog
       :show="showCreateModal"
       :title="t('admin.groups.createGroup')"
-      width="wide"
+      width="normal"
       @close="closeCreateModal"
     >
       <form
@@ -631,7 +885,6 @@
           id-prefix="create-group-reasoning"
           :platform="createForm.platform"
           v-model:max-effort="createForm.max_reasoning_effort"
-          v-model:over-limit="createForm.max_reasoning_effort_over_limit"
           v-model:mappings="createForm.reasoning_effort_mappings"
         />
         <div
@@ -1502,12 +1755,12 @@
 
 
         <div class="border-t border-gray-200 pt-4 mt-4 dark:border-dark-400">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0 flex-1">
+          <div class="flex items-start justify-between gap-4">
+            <div>
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.title") }}</h4>
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.groups.modelPricing.description") }}</p>
             </div>
-            <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(createForm.model_pricing)">
+            <button type="button" class="btn btn-secondary" @click="addGroupPricing(createForm.model_pricing)">
               <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.add") }}
             </button>
           </div>
@@ -1582,74 +1835,6 @@
             </div>
           </div>
         </div>
-        <!-- OpenAI Fast 开关（OpenAI 与 Composite 平台） -->
-        <div
-          v-if="supportsGroupOpenAIFast(createForm.platform)"
-          class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4"
-        >
-          <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            {{ t("admin.groups.openaiFast.title") }}
-          </h4>
-          <div class="flex items-center justify-between gap-4">
-            <label class="text-sm text-gray-600 dark:text-gray-400">
-              {{ t("admin.groups.openaiFast.force") }}
-            </label>
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="createForm.force_openai_fast"
-              :aria-label="t('admin.groups.openaiFast.force')"
-              data-testid="create-force-openai-fast"
-              @click="createForm.force_openai_fast = !createForm.force_openai_fast"
-              class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-              :class="
-                createForm.force_openai_fast
-                  ? 'bg-primary-500'
-                  : 'bg-gray-300 dark:bg-dark-600'
-              "
-            >
-              <span
-                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                :class="
-                  createForm.force_openai_fast ? 'translate-x-6' : 'translate-x-1'
-                "
-              />
-            </button>
-          </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {{ t("admin.groups.openaiFast.hint") }}
-          </p>
-          <div class="flex items-center justify-between gap-4 mt-4">
-            <label class="text-sm text-gray-600 dark:text-gray-400">
-              {{ t("admin.groups.openaiFast.free") }}
-            </label>
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="createForm.free_openai_fast"
-              :aria-label="t('admin.groups.openaiFast.free')"
-              data-testid="create-free-openai-fast"
-              @click="createForm.free_openai_fast = !createForm.free_openai_fast"
-              class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-              :class="
-                createForm.free_openai_fast
-                  ? 'bg-emerald-500'
-                  : 'bg-gray-300 dark:bg-dark-600'
-              "
-            >
-              <span
-                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                :class="
-                  createForm.free_openai_fast ? 'translate-x-6' : 'translate-x-1'
-                "
-              />
-            </button>
-          </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {{ t("admin.groups.openaiFast.freeHint") }}
-          </p>
-        </div>
-
         <!-- Codex Live 开关（OpenAI 与 Composite 平台） -->
         <div
           v-if="supportsLivePlatform(createForm.platform)"
@@ -2266,7 +2451,7 @@
     <BaseDialog
       :show="showEditModal"
       :title="t('admin.groups.editGroup')"
-      width="wide"
+      width="normal"
       @close="closeEditModal"
     >
       <form
@@ -2430,7 +2615,6 @@
           id-prefix="edit-group-reasoning"
           :platform="editForm.platform"
           v-model:max-effort="editForm.max_reasoning_effort"
-          v-model:over-limit="editForm.max_reasoning_effort_over_limit"
           v-model:mappings="editForm.reasoning_effort_mappings"
         />
         <div v-if="editForm.subscription_type !== 'subscription'">
@@ -3308,12 +3492,12 @@
 
 
         <div class="border-t border-gray-200 pt-4 mt-4 dark:border-dark-400">
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0 flex-1">
+          <div class="flex items-start justify-between gap-4">
+            <div>
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.title") }}</h4>
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.groups.modelPricing.description") }}</p>
             </div>
-            <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(editForm.model_pricing)">
+            <button type="button" class="btn btn-secondary" @click="addGroupPricing(editForm.model_pricing)">
               <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.add") }}
             </button>
           </div>
@@ -3388,74 +3572,6 @@
             </div>
           </div>
         </div>
-        <!-- OpenAI Fast 开关（OpenAI 与 Composite 平台） -->
-        <div
-          v-if="supportsGroupOpenAIFast(editForm.platform)"
-          class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4"
-        >
-          <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            {{ t("admin.groups.openaiFast.title") }}
-          </h4>
-          <div class="flex items-center justify-between gap-4">
-            <label class="text-sm text-gray-600 dark:text-gray-400">
-              {{ t("admin.groups.openaiFast.force") }}
-            </label>
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="editForm.force_openai_fast"
-              :aria-label="t('admin.groups.openaiFast.force')"
-              data-testid="edit-force-openai-fast"
-              @click="editForm.force_openai_fast = !editForm.force_openai_fast"
-              class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-              :class="
-                editForm.force_openai_fast
-                  ? 'bg-primary-500'
-                  : 'bg-gray-300 dark:bg-dark-600'
-              "
-            >
-              <span
-                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                :class="
-                  editForm.force_openai_fast ? 'translate-x-6' : 'translate-x-1'
-                "
-              />
-            </button>
-          </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {{ t("admin.groups.openaiFast.hint") }}
-          </p>
-          <div class="flex items-center justify-between gap-4 mt-4">
-            <label class="text-sm text-gray-600 dark:text-gray-400">
-              {{ t("admin.groups.openaiFast.free") }}
-            </label>
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="editForm.free_openai_fast"
-              :aria-label="t('admin.groups.openaiFast.free')"
-              data-testid="edit-free-openai-fast"
-              @click="editForm.free_openai_fast = !editForm.free_openai_fast"
-              class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-              :class="
-                editForm.free_openai_fast
-                  ? 'bg-emerald-500'
-                  : 'bg-gray-300 dark:bg-dark-600'
-              "
-            >
-              <span
-                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                :class="
-                  editForm.free_openai_fast ? 'translate-x-6' : 'translate-x-1'
-                "
-              />
-            </button>
-          </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {{ t("admin.groups.openaiFast.freeHint") }}
-          </p>
-        </div>
-
         <!-- Codex Live 开关（OpenAI 与 Composite 平台） -->
         <div
           v-if="supportsLivePlatform(editForm.platform)"
@@ -4570,6 +4686,7 @@ import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
+import { fetchAllAccountIds } from "@/utils/accountSelection";
 import type {
   AdminGroup,
   CodexModelsManifestConfig,
@@ -4580,7 +4697,10 @@ import type {
   CompositeRouteMatchType,
   GroupPlatform,
   SubscriptionType,
+  Account,
+  Proxy as AccountProxy,
 } from "@/types";
+import type { UpstreamProviderProfile } from "@/api/admin/settings";
 import {
   CONCRETE_PLATFORM_OPTIONS,
   GROUP_PLATFORM_OPTIONS,
@@ -4592,6 +4712,9 @@ import DataTable from "@/components/common/DataTable.vue";
 import Pagination from "@/components/common/Pagination.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
+import { EditAccountModal } from "@/components/account";
+import AccountTestModal from "@/components/admin/account/AccountTestModal.vue";
+import UpstreamBillingRateCell from "@/components/account/UpstreamBillingRateCell.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import Select from "@/components/common/Select.vue";
 import PlatformIcon from "@/components/common/PlatformIcon.vue";
@@ -4626,10 +4749,6 @@ import {
   type MessagesDispatchMappingRow,
 } from "./groupsMessagesDispatch";
 import {
-  normalizeGroupOpenAIFast,
-  supportsGroupOpenAIFast,
-} from "./groupsOpenAIFast";
-import {
   buildModelsListConfig,
   createModelsListState as createInitialModelsListState,
   invertModelsListSelection,
@@ -4648,10 +4767,8 @@ import {
 } from "./groupsProfitControl";
 import {
   normalizeReasoningEffortForPlatform,
-  normalizeReasoningEffortOverLimit,
   reasoningEffortMappingsToAPI,
   reasoningEffortMappingsToRows,
-  reasoningEffortOverLimitDowngrade,
   supportsReasoningEffortPolicyPlatform,
   type ReasoningEffortMappingRow,
 } from "./groupsReasoningEffort";
@@ -4681,7 +4798,6 @@ const emptyGroupPricing = (): PricingFormEntry => ({
   input_price: null,
   output_price: null,
   cache_write_price: null,
-  cache_write_1h_price: null,
   cache_read_price: null,
   image_input_price: null,
   image_output_price: null,
@@ -4702,7 +4818,6 @@ const groupPricingFromAPI = (
     input_price: perTokenToMTok(entry.input_price),
     output_price: perTokenToMTok(entry.output_price),
     cache_write_price: perTokenToMTok(entry.cache_write_price),
-    cache_write_1h_price: perTokenToMTok(entry.cache_write_1h_price),
     cache_read_price: perTokenToMTok(entry.cache_read_price),
     image_input_price: perTokenToMTok(entry.image_input_price),
     image_output_price: perTokenToMTok(entry.image_output_price),
@@ -4724,7 +4839,6 @@ const groupPricingToAPI = (
       input_price: mTokToPerToken(entry.input_price),
       output_price: mTokToPerToken(entry.output_price),
       cache_write_price: mTokToPerToken(entry.cache_write_price),
-      cache_write_1h_price: mTokToPerToken(entry.cache_write_1h_price),
       cache_read_price: mTokToPerToken(entry.cache_read_price),
       image_input_price: mTokToPerToken(entry.image_input_price),
       image_output_price: mTokToPerToken(entry.image_output_price),
@@ -5078,6 +5192,529 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
 });
 
 const groups = ref<AdminGroup[]>([]);
+const expandedGroupIds = ref<number[]>([]);
+const groupAccounts = ref<Record<number, Account[]>>({});
+const groupAccountsLoading = ref<Record<number, boolean>>({});
+const selectedGroupIds = ref<Set<number>>(new Set());
+const batchTestSelectedGroupsLoading = ref(false);
+const syncAllUpstreamModelsLoading = ref(false);
+const priorityDrafts = ref<Record<string, number>>({});
+const showGroupAccountDialog = ref(false);
+const accountDialogGroup = ref<AdminGroup | null>(null);
+const accountDialogCandidates = ref<Account[]>([]);
+const accountDialogSearch = ref("");
+const accountDialogSelected = ref<Set<number>>(new Set());
+const accountDialogLoading = ref(false);
+const accountDialogSaving = ref(false);
+const accountDialogProfiles = ref<UpstreamProviderProfile[]>([]);
+const accountDialogExpandedSections = ref<Set<string>>(new Set());
+const accountDialogExpandedPlatforms = ref<Set<string>>(new Set());
+const groupAccountSelections = ref<Record<number, number[]>>({});
+const batchStatusLoading = reactive<Record<number, boolean>>({});
+const batchTestLoading = reactive<Record<number, boolean>>({});
+const batchTestResults = reactive<Record<number, { success: boolean; message: string }>>({});
+const showNestedAccountEditor = ref(false);
+const editingNestedAccount = ref<Account | null>(null);
+const showNestedAccountTest = ref(false);
+const testingNestedAccount = ref<Account | null>(null);
+const accountEditProxies = ref<AccountProxy[]>([]);
+const accountEditGroups = ref<AdminGroup[]>([]);
+const accountEditDependenciesLoaded = ref(false);
+const probingUpstreamBilling = reactive(new Set<number>());
+const upstreamBillingNow = ref(Date.now());
+let upstreamBillingClock: ReturnType<typeof setInterval> | null = null;
+
+const isGroupExpanded = (groupID: number) => expandedGroupIds.value.includes(groupID);
+const isGroupSelected = (groupID: number) => selectedGroupIds.value.has(groupID);
+const toggleGroupSelection = (groupID: number) => {
+  const next = new Set(selectedGroupIds.value);
+  if (next.has(groupID)) next.delete(groupID);
+  else next.add(groupID);
+  selectedGroupIds.value = next;
+};
+const clearGroupBatchSelections = (groupIDs: number[]) => {
+  const selectedGroups = new Set(selectedGroupIds.value);
+  for (const groupID of groupIDs) selectedGroups.delete(groupID);
+  selectedGroupIds.value = selectedGroups;
+
+  const nextAccountSelections = { ...groupAccountSelections.value };
+  for (const groupID of groupIDs) nextAccountSelections[groupID] = [];
+  groupAccountSelections.value = nextAccountSelections;
+};
+const getGroupAccounts = (groupID: number) => groupAccounts.value[groupID] || [];
+const selectedGroupAccountIds = (groupID: number) => groupAccountSelections.value[groupID] || [];
+const isGroupAccountSelected = (groupID: number, accountID: number) => selectedGroupAccountIds(groupID).includes(accountID);
+const allGroupAccountsSelected = (groupID: number) => {
+  const accounts = getGroupAccounts(groupID);
+  const selected = selectedGroupAccountIds(groupID);
+  return accounts.length > 0 && accounts.every((account) => selected.includes(account.id));
+};
+const someGroupAccountsSelected = (groupID: number) => selectedGroupAccountIds(groupID).length > 0;
+const toggleGroupAccountSelection = (groupID: number, accountID: number) => {
+  const selected = new Set(selectedGroupAccountIds(groupID));
+  if (selected.has(accountID)) selected.delete(accountID);
+  else selected.add(accountID);
+  groupAccountSelections.value = { ...groupAccountSelections.value, [groupID]: [...selected] };
+};
+const toggleAllGroupAccounts = (groupID: number) => {
+  groupAccountSelections.value = {
+    ...groupAccountSelections.value,
+    [groupID]: allGroupAccountsSelected(groupID) ? [] : getGroupAccounts(groupID).map((account) => account.id),
+  };
+};
+const saveExpandedGroupIds = () => {
+  try {
+    localStorage.setItem("admin-expanded-group-ids", JSON.stringify(expandedGroupIds.value));
+  } catch (error) {
+    console.error("Failed to save expanded group state:", error);
+  }
+};
+
+const groupPriorityKey = (groupID: number, accountID: number) => `${groupID}:${accountID}`;
+const getAccountGroupPriority = (account: Account, groupID: number) =>
+  account.account_groups?.find((binding) => binding.group_id === groupID)?.priority ?? 1;
+const sortGroupAccounts = (groupID: number, accounts: Account[]) =>
+  [...accounts].sort((a, b) => getAccountGroupPriority(a, groupID) - getAccountGroupPriority(b, groupID) || a.id - b.id);
+
+const handleNestedUpstreamBillingProbe = async (group: AdminGroup, account: Account) => {
+  if (probingUpstreamBilling.has(account.id)) return;
+  probingUpstreamBilling.add(account.id);
+  try {
+    const result = await adminAPI.accounts.probeUpstreamBilling(account.id);
+    if (result.snapshot) {
+      const syncedRate = result.snapshot.synced_rate_multiplier;
+      const current = groupAccounts.value[group.id];
+      if (current) {
+        groupAccounts.value[group.id] = current.map((item) =>
+          item.id === account.id
+            ? {
+                ...item,
+                rate_multiplier: typeof syncedRate === "number" ? syncedRate : item.rate_multiplier,
+                extra: { ...item.extra, upstream_billing_probe: result.snapshot },
+              }
+            : item,
+        );
+      }
+      upstreamBillingNow.value = Date.now();
+    }
+  } catch (error) {
+    console.error("Failed to probe upstream billing:", error);
+    appStore.showError(extractApiErrorMessage(error, t("admin.accounts.upstreamBilling.probeFailed")));
+  } finally {
+    probingUpstreamBilling.delete(account.id);
+  }
+};
+
+const handleDialogUpstreamBillingProbe = async (account: Account) => {
+  if (probingUpstreamBilling.has(account.id)) return;
+  probingUpstreamBilling.add(account.id);
+  try {
+    const result = await adminAPI.accounts.probeUpstreamBilling(account.id);
+    if (result.snapshot) {
+      const syncedRate = result.snapshot.synced_rate_multiplier;
+      accountDialogCandidates.value = accountDialogCandidates.value.map((item) =>
+        item.id === account.id
+          ? {
+              ...item,
+              rate_multiplier: typeof syncedRate === "number" ? syncedRate : item.rate_multiplier,
+              extra: { ...item.extra, upstream_billing_probe: result.snapshot },
+            }
+          : item,
+      );
+      upstreamBillingNow.value = Date.now();
+    }
+  } catch (error) {
+    console.error("Failed to probe dialog upstream billing:", error);
+    appStore.showError(extractApiErrorMessage(error, t("admin.accounts.upstreamBilling.probeFailed")));
+  } finally {
+    probingUpstreamBilling.delete(account.id);
+  }
+};
+
+const loadGroupAccounts = async (group: AdminGroup) => {
+  groupAccountsLoading.value[group.id] = true;
+  try {
+    const response = await adminAPI.accounts.list(1, 1000, {
+      group: String(group.id),
+      platform: group.platform,
+      sort_by: "priority",
+      sort_order: "asc",
+    });
+    const allAccounts = [...(response.items || [])];
+    const pages = Math.max(1, Number(response.pages || Math.ceil(Number(response.total || 0) / 1000)));
+    for (let page = 2; page <= pages; page += 1) {
+      const next = await adminAPI.accounts.list(page, 1000, {
+        group: String(group.id),
+        platform: group.platform,
+        sort_by: "priority",
+        sort_order: "asc",
+      });
+      allAccounts.push(...(next.items || []));
+    }
+    const accounts = sortGroupAccounts(group.id, allAccounts);
+    groupAccounts.value[group.id] = accounts;
+    const accountIDs = new Set(accounts.map((account) => account.id));
+    groupAccountSelections.value = {
+      ...groupAccountSelections.value,
+      [group.id]: selectedGroupAccountIds(group.id).filter((accountID) => accountIDs.has(accountID)),
+    };
+    for (const account of accounts) {
+      priorityDrafts.value[groupPriorityKey(group.id, account.id)] = getAccountGroupPriority(account, group.id);
+    }
+  } catch (error) {
+    appStore.showError(t("admin.groups.accounts.loadFailed"));
+    console.error("Error loading accounts for group:", error);
+  } finally {
+    groupAccountsLoading.value[group.id] = false;
+  }
+};
+
+const toggleGroupAccounts = async (group: AdminGroup) => {
+  if (isGroupExpanded(group.id)) {
+    expandedGroupIds.value = expandedGroupIds.value.filter((id) => id !== group.id);
+    saveExpandedGroupIds();
+    return;
+  }
+  expandedGroupIds.value = [...expandedGroupIds.value, group.id];
+  saveExpandedGroupIds();
+  await loadGroupAccounts(group);
+};
+
+const updateAccountPriority = async (groupID: number, account: Account, rawValue: number | string | undefined) => {
+  const priority = Math.max(1, Math.round(Number(rawValue)) || 1);
+  priorityDrafts.value[groupPriorityKey(groupID, account.id)] = priority;
+  try {
+    const updated = await adminAPI.accounts.updateGroupPriority(account.id, groupID, priority);
+    const accounts = groupAccounts.value[groupID];
+    const target = accounts?.find((item) => item.id === account.id);
+    if (accounts && target) {
+      const accountGroups = (target.account_groups || []).map((binding) =>
+        binding.group_id === groupID ? { ...binding, priority: updated.priority } : binding,
+      );
+      groupAccounts.value[groupID] = sortGroupAccounts(groupID, accounts.map((item) =>
+        item.id === account.id ? { ...item, account_groups: accountGroups } : item,
+      ));
+    }
+    appStore.showSuccess(t("admin.groups.accounts.priorityUpdated"));
+  } catch (error) {
+    appStore.showError(t("admin.groups.accounts.updateFailed"));
+    console.error("Error updating account priority:", error);
+  }
+};
+
+const adjustAccountPriority = (groupID: number, account: Account, delta: number) => {
+  const key = groupPriorityKey(groupID, account.id);
+  const current = Number(priorityDrafts.value[key] ?? getAccountGroupPriority(account, groupID));
+  void updateAccountPriority(groupID, account, Math.max(1, current + delta));
+};
+
+const openGroupAccountDialog = async (group: AdminGroup) => {
+  accountDialogGroup.value = group;
+  accountDialogSearch.value = "";
+  accountDialogSelected.value = new Set();
+  showGroupAccountDialog.value = true;
+  accountDialogLoading.value = true;
+  try {
+    const currentAccounts = getGroupAccounts(group.id);
+    if (!accountDialogProfiles.value.length) {
+      accountDialogProfiles.value = await adminAPI.settings.getUpstreamProviderProfiles();
+    }
+    const response = await adminAPI.accounts.list(1, 1000, { platform: group.platform });
+    const currentIDs = new Set(currentAccounts.map((account) => account.id));
+    const candidates = [...(response.items || [])];
+    const pages = Math.max(1, Number(response.pages || Math.ceil(Number(response.total || 0) / 1000)));
+    for (let page = 2; page <= pages; page += 1) {
+      const next = await adminAPI.accounts.list(page, 1000, { platform: group.platform });
+      candidates.push(...(next.items || []));
+    }
+    accountDialogCandidates.value = candidates.filter((account) => !currentIDs.has(account.id));
+    const sections = groupedAccountDialogCandidates.value;
+    accountDialogExpandedSections.value = new Set(sections.map((section) => section.key));
+    accountDialogExpandedPlatforms.value = new Set(sections.flatMap((section) => section.platforms.map((platform) => platform.key)));
+  } catch (error) {
+    accountDialogCandidates.value = [];
+    appStore.showError(t("admin.groups.accounts.loadFailed"));
+    console.error("Error loading account candidates:", error);
+  } finally {
+    accountDialogLoading.value = false;
+  }
+};
+
+const filteredAccountDialogCandidates = computed(() => {
+  const keyword = accountDialogSearch.value.trim().toLowerCase();
+  if (!keyword) return accountDialogCandidates.value;
+  return accountDialogCandidates.value.filter((account) => account.name.toLowerCase().includes(keyword));
+});
+
+const groupedAccountDialogCandidates = computed(() => {
+  const groups = new Map<string, { key: string; label: string; order: number; accounts: Account[]; platforms: Array<{ key: string; platform: Account["platform"]; label: string; accounts: Account[] }> }>();
+  for (const account of filteredAccountDialogCandidates.value) {
+    const raw = (account as Account & { upstream_provider_profile_id?: number | string | null }).upstream_provider_profile_id
+      ?? account.extra?.upstream_provider_profile_id;
+    const profileID = Number(raw);
+    const profile = Number.isFinite(profileID) && profileID > 0
+      ? accountDialogProfiles.value.find((item) => item.id === profileID)
+      : undefined;
+    const key = profile ? `profile-${profile.id}` : 'unassigned';
+    const section = groups.get(key) || {
+      key,
+      label: profile?.name || t('admin.accounts.upstreamProfiles.unassigned'),
+      order: profile ? profile.sort_order : Number.MAX_SAFE_INTEGER,
+      accounts: [],
+      platforms: [],
+    };
+    section.accounts.push(account);
+    let platformSection = section.platforms.find((item) => item.platform === account.platform);
+    if (!platformSection) {
+      platformSection = {
+        key: `${key}-${account.platform}`,
+        platform: account.platform,
+        label: CONCRETE_PLATFORM_OPTIONS.find((item) => item.value === account.platform)?.label || account.platform,
+        accounts: [],
+      };
+      section.platforms.push(platformSection);
+    }
+    platformSection.accounts.push(account);
+    groups.set(key, section);
+  }
+  const platformOrder = new Map(CONCRETE_PLATFORM_OPTIONS.map((item, index) => [item.value, index]));
+  return [...groups.values()]
+    .map((section) => ({ ...section, platforms: section.platforms.sort((a, b) => (platformOrder.get(a.platform) ?? Number.MAX_SAFE_INTEGER) - (platformOrder.get(b.platform) ?? Number.MAX_SAFE_INTEGER)) }))
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+});
+
+const isAccountDialogSectionExpanded = (key: string) => accountDialogExpandedSections.value.has(key);
+const toggleAccountDialogSection = (key: string) => {
+  const next = new Set(accountDialogExpandedSections.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  accountDialogExpandedSections.value = next;
+};
+const isAccountDialogPlatformExpanded = (key: string) => accountDialogExpandedPlatforms.value.has(key);
+const toggleAccountDialogPlatform = (key: string) => {
+  const next = new Set(accountDialogExpandedPlatforms.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  accountDialogExpandedPlatforms.value = next;
+};
+
+const toggleAccountDialogSelection = (accountID: number) => {
+  const selected = new Set(accountDialogSelected.value);
+  if (selected.has(accountID)) selected.delete(accountID);
+  else selected.add(accountID);
+  accountDialogSelected.value = selected;
+};
+
+const batchUpdateGroupAccountStatus = async (group: AdminGroup, status: 'active' | 'inactive') => {
+  const accountIDs = selectedGroupAccountIds(group.id);
+  if (!accountIDs.length || batchStatusLoading[group.id]) return;
+  batchStatusLoading[group.id] = true;
+  try {
+    await adminAPI.accounts.bulkUpdate(accountIDs, { status });
+    await loadGroupAccounts(group);
+    await loadGroups();
+    groupAccountSelections.value = { ...groupAccountSelections.value, [group.id]: [] };
+    appStore.showSuccess(t(status === 'active' ? 'admin.groups.accounts.enabledSelected' : 'admin.groups.accounts.disabledSelected', { count: accountIDs.length }));
+  } catch (error) {
+    appStore.showError(t('admin.groups.accounts.updateFailed'));
+    console.error('Error updating selected account status:', error);
+  } finally {
+    batchStatusLoading[group.id] = false;
+  }
+};
+
+const batchTestGroupAccounts = async (group: AdminGroup) => {
+  const accountIDs = selectedGroupAccountIds(group.id);
+  if (!accountIDs.length || batchTestLoading[group.id]) return;
+  batchTestLoading[group.id] = true;
+  try {
+    const response = await adminAPI.accounts.batchTest(accountIDs);
+    for (const item of response.results || []) {
+      const result = item.result;
+      const success = Boolean(result && (result.status === 'success' || result.status === 'passed')) && !item.error;
+      const message = item.error || result?.error_message || (success ? t('admin.groups.accounts.testPassed') : t('admin.groups.accounts.testFailed'));
+      batchTestResults[item.account_id] = { success, message };
+    }
+    groupAccountSelections.value = { ...groupAccountSelections.value, [group.id]: [] };
+    appStore.showSuccess(t('admin.groups.accounts.testCompleted', { count: accountIDs.length }));
+  } catch (error) {
+    appStore.showError(t('admin.groups.accounts.testFailed'));
+    console.error('Error testing selected accounts:', error);
+  } finally {
+    batchTestLoading[group.id] = false;
+  }
+};
+
+const batchTestSelectedGroups = async () => {
+  if (batchTestSelectedGroupsLoading.value) return;
+
+  const groupIDs = [...selectedGroupIds.value];
+  const selectedGroups = groups.value.filter((group) => groupIDs.includes(group.id));
+  if (selectedGroups.length === 0) {
+    selectedGroupIds.value = new Set();
+    return;
+  }
+
+  batchTestSelectedGroupsLoading.value = true;
+  try {
+    await Promise.all(selectedGroups.map(async (group) => {
+      if (!groupAccounts.value[group.id]) await loadGroupAccounts(group);
+    }));
+
+    const accountIDs = [...new Set(
+      selectedGroups.flatMap((group) => getGroupAccounts(group.id).map((account) => account.id)),
+    )];
+    if (accountIDs.length === 0) {
+      appStore.showInfo(t('admin.groups.accounts.testSelectedGroupsEmpty'));
+      return;
+    }
+
+    for (let index = 0; index < accountIDs.length; index += 50) {
+      const response = await adminAPI.accounts.batchTest(accountIDs.slice(index, index + 50));
+      for (const item of response.results || []) {
+        const result = item.result;
+        const success = Boolean(result && (result.status === 'success' || result.status === 'passed')) && !item.error;
+        const message = item.error || result?.error_message || (success ? t('admin.groups.accounts.testPassed') : t('admin.groups.accounts.testFailed'));
+        batchTestResults[item.account_id] = { success, message };
+      }
+    }
+    appStore.showSuccess(t('admin.groups.accounts.testGroupsCompleted', { count: accountIDs.length }));
+  } catch (error) {
+    appStore.showError(t('admin.groups.accounts.testFailed'));
+    console.error('Error testing selected groups:', error);
+  } finally {
+    clearGroupBatchSelections(groupIDs);
+    batchTestSelectedGroupsLoading.value = false;
+  }
+};
+
+const syncAllUpstreamModels = async () => {
+  if (syncAllUpstreamModelsLoading.value) return;
+  syncAllUpstreamModelsLoading.value = true;
+  try {
+    const accountIDs = await fetchAllAccountIds(
+      (page, pageSize, filters) => adminAPI.accounts.list(page, pageSize, filters),
+      {},
+    );
+    let successCount = 0;
+    let failedCount = 0;
+    for (let index = 0; index < accountIDs.length; index += 50) {
+      const response = await adminAPI.accounts.batchSyncUpstreamModels(accountIDs.slice(index, index + 50));
+      for (const result of response.results || []) {
+        if (result.success) successCount += 1;
+        else failedCount += 1;
+      }
+    }
+    await loadGroups();
+    appStore.showSuccess(t("admin.groups.syncAllUpstreamModelsDone", { success: successCount, failed: failedCount }));
+  } catch (error) {
+    appStore.showError(t("admin.groups.syncAllUpstreamModelsFailed"));
+    console.error("Error syncing all upstream models:", error);
+  } finally {
+    syncAllUpstreamModelsLoading.value = false;
+  }
+};
+
+const closeGroupAccountDialog = () => {
+  showGroupAccountDialog.value = false;
+  accountDialogGroup.value = null;
+  accountDialogCandidates.value = [];
+  accountDialogSelected.value = new Set();
+  accountDialogExpandedSections.value = new Set();
+  accountDialogExpandedPlatforms.value = new Set();
+};
+
+const addAccountsToGroup = async () => {
+  const group = accountDialogGroup.value;
+  if (!group || accountDialogSelected.value.size === 0) return;
+  accountDialogSaving.value = true;
+  try {
+    for (const accountID of accountDialogSelected.value) {
+      const account = accountDialogCandidates.value.find((item) => item.id === accountID);
+      if (!account) continue;
+      await adminAPI.accounts.addToGroup(account.id, group.id);
+    }
+    appStore.showSuccess(t("admin.groups.accounts.updated"));
+    closeGroupAccountDialog();
+    await loadGroupAccounts(group);
+    await loadGroups();
+  } catch (error) {
+    appStore.showError(t("admin.groups.accounts.updateFailed"));
+    console.error("Error adding accounts to group:", error);
+  } finally {
+    accountDialogSaving.value = false;
+  }
+};
+
+const removeAccountFromGroup = async (group: AdminGroup, account: Account) => {
+  try {
+    await adminAPI.accounts.removeFromGroup(account.id, group.id);
+    await loadGroupAccounts(group);
+    await loadGroups();
+    appStore.showSuccess(t("admin.groups.accounts.removed"));
+  } catch (error) {
+    appStore.showError(t("admin.groups.accounts.updateFailed"));
+    console.error("Error removing account from group:", error);
+  }
+};
+
+const toggleNestedAccountStatus = async (account: Account) => {
+  const status = account.status === "active" ? "inactive" : "active";
+  try {
+    const updated = await adminAPI.accounts.update(account.id, { status });
+    const groupIDs = account.group_ids || account.groups?.map((group) => group.id) || [];
+    for (const groupID of groupIDs) {
+      if (groupAccounts.value[groupID]) {
+        groupAccounts.value[groupID] = groupAccounts.value[groupID].map((item) => item.id === account.id ? { ...item, ...updated } : item);
+      }
+    }
+    await loadGroups();
+    appStore.showSuccess(t(status === "active" ? "admin.groups.accounts.enabled" : "admin.groups.accounts.disabled"));
+  } catch (error) {
+    appStore.showError(t("admin.groups.accounts.updateFailed"));
+    console.error("Error updating account status:", error);
+  }
+};
+
+const openNestedAccountTest = (account: Account) => {
+  testingNestedAccount.value = account;
+  showNestedAccountTest.value = true;
+};
+
+const closeNestedAccountTest = () => {
+  showNestedAccountTest.value = false;
+  testingNestedAccount.value = null;
+};
+
+const openAccountEditor = async (account: Account) => {
+  editingNestedAccount.value = account;
+  showNestedAccountEditor.value = true;
+  if (!accountEditDependenciesLoaded.value) {
+    try {
+      const [proxyList, groupList] = await Promise.all([
+        adminAPI.proxies.getAll(),
+        adminAPI.groups.getAllIncludingInactive(),
+      ]);
+      accountEditProxies.value = proxyList;
+      accountEditGroups.value = groupList;
+      accountEditDependenciesLoaded.value = true;
+    } catch (error) {
+      appStore.showError(t("admin.groups.accounts.loadFailed"));
+      console.error("Error loading account editor dependencies:", error);
+    }
+  }
+};
+
+const handleNestedAccountUpdated = async () => {
+  showNestedAccountEditor.value = false;
+  editingNestedAccount.value = null;
+  for (const group of groups.value) {
+    if (expandedGroupIds.value.includes(group.id)) {
+      await loadGroupAccounts(group);
+    }
+  }
+  await loadGroups();
+};
 const loading = ref(false);
 type GroupUsageSummary = {
   today_cost: number;
@@ -5221,8 +5858,6 @@ const createForm = reactive({
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
   long_context_pricing_enabled: true,
-  force_openai_fast: false,
-  free_openai_fast: false,
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
   allow_image_generation: false,
@@ -5281,7 +5916,6 @@ const createForm = reactive({
   // 分组级 RPM 限制（每用户每分钟最大请求数；0 = 不限制）
   rpm_limit: 0 as number,
   max_reasoning_effort: "",
-  max_reasoning_effort_over_limit: reasoningEffortOverLimitDowngrade,
   reasoning_effort_mappings: [] as ReasoningEffortMappingRow[],
 });
 
@@ -5585,8 +6219,6 @@ const editForm = reactive({
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
   long_context_pricing_enabled: true,
-  force_openai_fast: false,
-  free_openai_fast: false,
   model_pricing: [] as PricingFormEntry[],
   // 图片生成计费配置
   allow_image_generation: false,
@@ -5646,7 +6278,6 @@ const editForm = reactive({
   // 分组级 RPM 限制（每用户每分钟最大请求数；0 = 不限制）
   rpm_limit: 0 as number,
   max_reasoning_effort: "",
-  max_reasoning_effort_over_limit: reasoningEffortOverLimitDowngrade,
   reasoning_effort_mappings: [] as ReasoningEffortMappingRow[],
 });
 
@@ -5891,6 +6522,11 @@ const loadGroups = async () => {
     groups.value = response.items;
     pagination.total = response.total;
     pagination.pages = response.pages;
+    await Promise.all(
+      groups.value
+        .filter((group) => expandedGroupIds.value.includes(group.id))
+        .map((group) => loadGroupAccounts(group)),
+    );
     if (hasVisibleUsageSummaryConsumer.value) {
       loadUsageSummary();
     } else {
@@ -6062,8 +6698,6 @@ const closeCreateModal = () => {
   createForm.video_price_1080p = null;
   createForm.video_model_prices = createVideoModelPricesForm();
   createForm.long_context_pricing_enabled = true;
-  createForm.force_openai_fast = false;
-  createForm.free_openai_fast = false;
   createForm.model_pricing = [];
   createForm.web_search_price_per_call = null;
   createForm.search_price_per_1k = null;
@@ -6089,7 +6723,6 @@ const closeCreateModal = () => {
   createForm.copy_accounts_from_group_ids = [];
   createForm.rpm_limit = 0;
   createForm.max_reasoning_effort = "";
-  createForm.max_reasoning_effort_over_limit = reasoningEffortOverLimitDowngrade;
   createForm.reasoning_effort_mappings = [];
   createReasoningEffortPolicyRef.value?.resetValidation();
   resetModelsListState(createModelsListState);
@@ -6165,14 +6798,6 @@ const handleCreateGroup = async () => {
     // 构建请求数据，包含模型路由配置
     const requestData = {
       ...createGroupForm,
-      force_openai_fast: normalizeGroupOpenAIFast(
-        createForm.platform,
-        createForm.force_openai_fast,
-      ),
-      free_openai_fast: normalizeGroupOpenAIFast(
-        createForm.platform,
-        createForm.free_openai_fast,
-      ),
       model_pricing: groupPricingToAPI(
         createForm.model_pricing,
         createForm.platform,
@@ -6303,8 +6928,6 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.monthly_limit_usd = group.monthly_limit_usd;
   editForm.long_context_pricing_enabled =
     group.long_context_pricing_enabled ?? true;
-  editForm.force_openai_fast = group.force_openai_fast ?? false;
-  editForm.free_openai_fast = group.free_openai_fast ?? false;
   editForm.model_pricing = groupPricingFromAPI(group.model_pricing);
   editForm.allow_image_generation = group.allow_image_generation ?? false;
   editForm.allow_batch_image_generation =
@@ -6372,9 +6995,6 @@ const handleEdit = async (group: AdminGroup) => {
     group.platform,
     group.max_reasoning_effort,
   );
-  editForm.max_reasoning_effort_over_limit = normalizeReasoningEffortOverLimit(
-    group.max_reasoning_effort_over_limit,
-  );
   editForm.reasoning_effort_mappings = reasoningEffortMappingsToRows(
     group.reasoning_effort_mappings,
     group.platform,
@@ -6418,7 +7038,6 @@ const closeEditModal = () => {
   showEditModal.value = false;
   editingGroup.value = null;
   editForm.max_reasoning_effort = "";
-  editForm.max_reasoning_effort_over_limit = reasoningEffortOverLimitDowngrade;
   editForm.reasoning_effort_mappings = [];
   editReasoningEffortPolicyRef.value?.resetValidation();
   editModelRoutingRules.value = [];
@@ -6437,8 +7056,6 @@ const closeEditModal = () => {
   editForm.video_price_1080p = null;
   editForm.video_model_prices = createVideoModelPricesForm();
   editForm.long_context_pricing_enabled = true;
-  editForm.force_openai_fast = false;
-  editForm.free_openai_fast = false;
   editForm.model_pricing = [];
   editForm.web_search_price_per_call = null;
   editForm.search_price_per_1k = null;
@@ -6485,14 +7102,6 @@ const handleUpdateGroup = async () => {
     // 转换 fallback_group_id: null -> 0 (后端使用 0 表示清除)
     const payload = {
       ...editForm,
-      force_openai_fast: normalizeGroupOpenAIFast(
-        editForm.platform,
-        editForm.force_openai_fast,
-      ),
-      free_openai_fast: normalizeGroupOpenAIFast(
-        editForm.platform,
-        editForm.free_openai_fast,
-      ),
       model_pricing: groupPricingToAPI(
         editForm.model_pricing,
         editForm.platform,
@@ -6926,13 +7535,6 @@ watch(
       newVal,
       createForm.max_reasoning_effort,
     );
-    createForm.max_reasoning_effort_over_limit = supportsReasoningEffortPolicyPlatform(
-      newVal,
-    )
-      ? normalizeReasoningEffortOverLimit(
-          createForm.max_reasoning_effort_over_limit,
-        )
-      : reasoningEffortOverLimitDowngrade;
     createForm.reasoning_effort_mappings = reasoningEffortMappingsToRows(
       reasoningEffortMappingsToAPI(createForm.reasoning_effort_mappings),
       newVal,
@@ -6983,13 +7585,6 @@ watch(
       newVal,
       editForm.max_reasoning_effort,
     );
-    editForm.max_reasoning_effort_over_limit = supportsReasoningEffortPolicyPlatform(
-      newVal,
-    )
-      ? normalizeReasoningEffortOverLimit(
-          editForm.max_reasoning_effort_over_limit,
-        )
-      : reasoningEffortOverLimitDowngrade;
     editForm.reasoning_effort_mappings = reasoningEffortMappingsToRows(
       reasoningEffortMappingsToAPI(editForm.reasoning_effort_mappings),
       newVal,
@@ -7096,15 +7691,36 @@ const saveSortOrder = async () => {
 };
 
 onMounted(() => {
+  try {
+    const savedExpandedGroupIds = JSON.parse(localStorage.getItem("admin-expanded-group-ids") || "[]");
+    if (Array.isArray(savedExpandedGroupIds)) {
+      expandedGroupIds.value = savedExpandedGroupIds.filter((id): id is number => Number.isInteger(id) && id > 0);
+    }
+  } catch (error) {
+    console.error("Failed to restore expanded group state:", error);
+  }
   loadGroups();
   void loadLiveCapability();
+  upstreamBillingClock = setInterval(() => {
+    upstreamBillingNow.value = Date.now();
+  }, 60_000);
   loadModelsListCandidates("create", 0, createForm.platform);
   document.addEventListener("click", handleClickOutside);
 });
 
 onUnmounted(() => {
   document.removeEventListener("click", handleClickOutside);
+  if (upstreamBillingClock) {
+    clearInterval(upstreamBillingClock);
+    upstreamBillingClock = null;
+  }
   accountSearchRunner.clearAll();
   clearAllAccountSearchState();
 });
 </script>
+
+<style scoped>
+.nested-account-move {
+  transition: transform 180ms ease;
+}
+</style>

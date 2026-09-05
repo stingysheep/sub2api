@@ -204,6 +204,7 @@ const (
 	SettingKeyInvitationCodeEnabled               = "invitation_code_enabled"          // 是否启用邀请码注册
 	SettingKeyAffiliateEnabled                    = "affiliate_enabled"                // 邀请返利功能总开关
 	SettingKeyAffiliateRebateRate                 = "affiliate_rebate_rate"            // 邀请返利比例（百分比，0-100）
+	SettingKeyAffiliateDisplayRebateRate          = "affiliate_display_rebate_rate"    // 前端展示返利比例（仅展示）
 	SettingKeyAffiliateRebateFreezeHours          = "affiliate_rebate_freeze_hours"    // 返利冻结期（小时，0=不冻结）
 	SettingKeyAffiliateRebateDurationDays         = "affiliate_rebate_duration_days"   // 返利有效期（天，0=永久）
 	SettingKeyAffiliateRebatePerInviteeCap        = "affiliate_rebate_per_invitee_cap" // 单人返利上限（0=无上限）
@@ -350,6 +351,7 @@ const (
 	SettingKeySiteName                    = "site_name"                     // 网站名称
 	SettingKeySiteLogo                    = "site_logo"                     // 网站Logo (base64)
 	SettingKeySiteSubtitle                = "site_subtitle"                 // 网站副标题
+	SettingKeyDashboardNotice             = "dashboard_notice"              // 仪表盘顶部通知文字
 	SettingKeyAPIBaseURL                  = "api_base_url"                  // API端点地址（用于客户端配置和导入）
 	SettingKeyContactInfo                 = "contact_info"                  // 客服联系方式
 	SettingKeyDocURL                      = "doc_url"                       // 文档链接
@@ -471,6 +473,10 @@ const (
 	// SettingKeyChannelMonitorDefaultIntervalSeconds controls the default interval (seconds)
 	// pre-filled when creating a new channel monitor from the admin UI. Range: [15, 3600].
 	SettingKeyChannelMonitorDefaultIntervalSeconds = "channel_monitor_default_interval_seconds"
+
+	// SettingKeyChannelMonitorDegradedThresholdSeconds controls the V1 active-probe
+	// latency threshold at which a successful response is classified as degraded. Range: [1, 45].
+	SettingKeyChannelMonitorDegradedThresholdSeconds = "channel_monitor_degraded_threshold_seconds"
 
 	// SettingKeyChannelMonitorHideThroughput hides RPM/TPM (and similar absolute
 	// throughput rates) from non-admin user-facing monitor APIs and UI, so users

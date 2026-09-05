@@ -683,26 +683,30 @@ func init() {
 	channelmonitor.DefaultGroupName = channelmonitorDescGroupName.Default.(string)
 	// channelmonitor.GroupNameValidator is a validator for the "group_name" field. It is called by the builders before save.
 	channelmonitor.GroupNameValidator = channelmonitorDescGroupName.Validators[0].(func(string) error)
+	// channelmonitorDescMonitorSortOrder is the schema descriptor for monitor_sort_order field.
+	channelmonitorDescMonitorSortOrder := channelmonitorFields[11].Descriptor()
+	// channelmonitor.DefaultMonitorSortOrder holds the default value on creation for the monitor_sort_order field.
+	channelmonitor.DefaultMonitorSortOrder = channelmonitorDescMonitorSortOrder.Default.(int)
 	// channelmonitorDescEnabled is the schema descriptor for enabled field.
-	channelmonitorDescEnabled := channelmonitorFields[10].Descriptor()
+	channelmonitorDescEnabled := channelmonitorFields[12].Descriptor()
 	// channelmonitor.DefaultEnabled holds the default value on creation for the enabled field.
 	channelmonitor.DefaultEnabled = channelmonitorDescEnabled.Default.(bool)
 	// channelmonitorDescIntervalSeconds is the schema descriptor for interval_seconds field.
-	channelmonitorDescIntervalSeconds := channelmonitorFields[11].Descriptor()
+	channelmonitorDescIntervalSeconds := channelmonitorFields[13].Descriptor()
 	// channelmonitor.IntervalSecondsValidator is a validator for the "interval_seconds" field. It is called by the builders before save.
 	channelmonitor.IntervalSecondsValidator = channelmonitorDescIntervalSeconds.Validators[0].(func(int) error)
 	// channelmonitorDescJitterSeconds is the schema descriptor for jitter_seconds field.
-	channelmonitorDescJitterSeconds := channelmonitorFields[12].Descriptor()
+	channelmonitorDescJitterSeconds := channelmonitorFields[14].Descriptor()
 	// channelmonitor.DefaultJitterSeconds holds the default value on creation for the jitter_seconds field.
 	channelmonitor.DefaultJitterSeconds = channelmonitorDescJitterSeconds.Default.(int)
 	// channelmonitor.JitterSecondsValidator is a validator for the "jitter_seconds" field. It is called by the builders before save.
 	channelmonitor.JitterSecondsValidator = channelmonitorDescJitterSeconds.Validators[0].(func(int) error)
 	// channelmonitorDescExtraHeaders is the schema descriptor for extra_headers field.
-	channelmonitorDescExtraHeaders := channelmonitorFields[16].Descriptor()
+	channelmonitorDescExtraHeaders := channelmonitorFields[18].Descriptor()
 	// channelmonitor.DefaultExtraHeaders holds the default value on creation for the extra_headers field.
 	channelmonitor.DefaultExtraHeaders = channelmonitorDescExtraHeaders.Default.(map[string]string)
 	// channelmonitorDescBodyOverrideMode is the schema descriptor for body_override_mode field.
-	channelmonitorDescBodyOverrideMode := channelmonitorFields[17].Descriptor()
+	channelmonitorDescBodyOverrideMode := channelmonitorFields[19].Descriptor()
 	// channelmonitor.DefaultBodyOverrideMode holds the default value on creation for the body_override_mode field.
 	channelmonitor.DefaultBodyOverrideMode = channelmonitorDescBodyOverrideMode.Default.(string)
 	// channelmonitor.BodyOverrideModeValidator is a validator for the "body_override_mode" field. It is called by the builders before save.
@@ -1747,18 +1751,38 @@ func init() {
 	redeemcodeDescValue := redeemcodeFields[2].Descriptor()
 	// redeemcode.DefaultValue holds the default value on creation for the value field.
 	redeemcode.DefaultValue = redeemcodeDescValue.Default.(float64)
+	// redeemcodeDescBalanceSource is the schema descriptor for balance_source field.
+	redeemcodeDescBalanceSource := redeemcodeFields[3].Descriptor()
+	// redeemcode.DefaultBalanceSource holds the default value on creation for the balance_source field.
+	redeemcode.DefaultBalanceSource = redeemcodeDescBalanceSource.Default.(string)
+	// redeemcode.BalanceSourceValidator is a validator for the "balance_source" field. It is called by the builders before save.
+	redeemcode.BalanceSourceValidator = func() func(string) error {
+		validators := redeemcodeDescBalanceSource.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(balance_source string) error {
+			for _, fn := range fns {
+				if err := fn(balance_source); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	// redeemcodeDescStatus is the schema descriptor for status field.
-	redeemcodeDescStatus := redeemcodeFields[3].Descriptor()
+	redeemcodeDescStatus := redeemcodeFields[4].Descriptor()
 	// redeemcode.DefaultStatus holds the default value on creation for the status field.
 	redeemcode.DefaultStatus = redeemcodeDescStatus.Default.(string)
 	// redeemcode.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	redeemcode.StatusValidator = redeemcodeDescStatus.Validators[0].(func(string) error)
 	// redeemcodeDescCreatedAt is the schema descriptor for created_at field.
-	redeemcodeDescCreatedAt := redeemcodeFields[7].Descriptor()
+	redeemcodeDescCreatedAt := redeemcodeFields[8].Descriptor()
 	// redeemcode.DefaultCreatedAt holds the default value on creation for the created_at field.
 	redeemcode.DefaultCreatedAt = redeemcodeDescCreatedAt.Default.(func() time.Time)
 	// redeemcodeDescValidityDays is the schema descriptor for validity_days field.
-	redeemcodeDescValidityDays := redeemcodeFields[10].Descriptor()
+	redeemcodeDescValidityDays := redeemcodeFields[11].Descriptor()
 	// redeemcode.DefaultValidityDays holds the default value on creation for the validity_days field.
 	redeemcode.DefaultValidityDays = redeemcodeDescValidityDays.Default.(int)
 	securitysecretMixin := schema.SecuritySecret{}.Mixin()
@@ -2201,62 +2225,74 @@ func init() {
 	userDescBalance := userFields[3].Descriptor()
 	// user.DefaultBalance holds the default value on creation for the balance field.
 	user.DefaultBalance = userDescBalance.Default.(float64)
+	// userDescFreeBalance is the schema descriptor for free_balance field.
+	userDescFreeBalance := userFields[4].Descriptor()
+	// user.DefaultFreeBalance holds the default value on creation for the free_balance field.
+	user.DefaultFreeBalance = userDescFreeBalance.Default.(float64)
+	// userDescPaidBalance is the schema descriptor for paid_balance field.
+	userDescPaidBalance := userFields[5].Descriptor()
+	// user.DefaultPaidBalance holds the default value on creation for the paid_balance field.
+	user.DefaultPaidBalance = userDescPaidBalance.Default.(float64)
+	// userDescFreeBalanceIssued is the schema descriptor for free_balance_issued field.
+	userDescFreeBalanceIssued := userFields[6].Descriptor()
+	// user.DefaultFreeBalanceIssued holds the default value on creation for the free_balance_issued field.
+	user.DefaultFreeBalanceIssued = userDescFreeBalanceIssued.Default.(float64)
 	// userDescFrozenBalance is the schema descriptor for frozen_balance field.
-	userDescFrozenBalance := userFields[4].Descriptor()
+	userDescFrozenBalance := userFields[7].Descriptor()
 	// user.DefaultFrozenBalance holds the default value on creation for the frozen_balance field.
 	user.DefaultFrozenBalance = userDescFrozenBalance.Default.(float64)
 	// userDescConcurrency is the schema descriptor for concurrency field.
-	userDescConcurrency := userFields[5].Descriptor()
+	userDescConcurrency := userFields[8].Descriptor()
 	// user.DefaultConcurrency holds the default value on creation for the concurrency field.
 	user.DefaultConcurrency = userDescConcurrency.Default.(int)
 	// userDescStatus is the schema descriptor for status field.
-	userDescStatus := userFields[6].Descriptor()
+	userDescStatus := userFields[9].Descriptor()
 	// user.DefaultStatus holds the default value on creation for the status field.
 	user.DefaultStatus = userDescStatus.Default.(string)
 	// user.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	user.StatusValidator = userDescStatus.Validators[0].(func(string) error)
 	// userDescUsername is the schema descriptor for username field.
-	userDescUsername := userFields[7].Descriptor()
+	userDescUsername := userFields[10].Descriptor()
 	// user.DefaultUsername holds the default value on creation for the username field.
 	user.DefaultUsername = userDescUsername.Default.(string)
 	// user.UsernameValidator is a validator for the "username" field. It is called by the builders before save.
 	user.UsernameValidator = userDescUsername.Validators[0].(func(string) error)
 	// userDescNotes is the schema descriptor for notes field.
-	userDescNotes := userFields[8].Descriptor()
+	userDescNotes := userFields[11].Descriptor()
 	// user.DefaultNotes holds the default value on creation for the notes field.
 	user.DefaultNotes = userDescNotes.Default.(string)
 	// userDescTotpEnabled is the schema descriptor for totp_enabled field.
-	userDescTotpEnabled := userFields[10].Descriptor()
+	userDescTotpEnabled := userFields[13].Descriptor()
 	// user.DefaultTotpEnabled holds the default value on creation for the totp_enabled field.
 	user.DefaultTotpEnabled = userDescTotpEnabled.Default.(bool)
 	// userDescSignupSource is the schema descriptor for signup_source field.
-	userDescSignupSource := userFields[12].Descriptor()
+	userDescSignupSource := userFields[15].Descriptor()
 	// user.DefaultSignupSource holds the default value on creation for the signup_source field.
 	user.DefaultSignupSource = userDescSignupSource.Default.(string)
 	// user.SignupSourceValidator is a validator for the "signup_source" field. It is called by the builders before save.
 	user.SignupSourceValidator = userDescSignupSource.Validators[0].(func(string) error)
 	// userDescRestrictPublicGroups is the schema descriptor for restrict_public_groups field.
-	userDescRestrictPublicGroups := userFields[15].Descriptor()
+	userDescRestrictPublicGroups := userFields[18].Descriptor()
 	// user.DefaultRestrictPublicGroups holds the default value on creation for the restrict_public_groups field.
 	user.DefaultRestrictPublicGroups = userDescRestrictPublicGroups.Default.(bool)
 	// userDescBalanceNotifyEnabled is the schema descriptor for balance_notify_enabled field.
-	userDescBalanceNotifyEnabled := userFields[16].Descriptor()
+	userDescBalanceNotifyEnabled := userFields[19].Descriptor()
 	// user.DefaultBalanceNotifyEnabled holds the default value on creation for the balance_notify_enabled field.
 	user.DefaultBalanceNotifyEnabled = userDescBalanceNotifyEnabled.Default.(bool)
 	// userDescBalanceNotifyThresholdType is the schema descriptor for balance_notify_threshold_type field.
-	userDescBalanceNotifyThresholdType := userFields[17].Descriptor()
+	userDescBalanceNotifyThresholdType := userFields[20].Descriptor()
 	// user.DefaultBalanceNotifyThresholdType holds the default value on creation for the balance_notify_threshold_type field.
 	user.DefaultBalanceNotifyThresholdType = userDescBalanceNotifyThresholdType.Default.(string)
 	// userDescBalanceNotifyExtraEmails is the schema descriptor for balance_notify_extra_emails field.
-	userDescBalanceNotifyExtraEmails := userFields[19].Descriptor()
+	userDescBalanceNotifyExtraEmails := userFields[22].Descriptor()
 	// user.DefaultBalanceNotifyExtraEmails holds the default value on creation for the balance_notify_extra_emails field.
 	user.DefaultBalanceNotifyExtraEmails = userDescBalanceNotifyExtraEmails.Default.(string)
 	// userDescTotalRecharged is the schema descriptor for total_recharged field.
-	userDescTotalRecharged := userFields[20].Descriptor()
+	userDescTotalRecharged := userFields[23].Descriptor()
 	// user.DefaultTotalRecharged holds the default value on creation for the total_recharged field.
 	user.DefaultTotalRecharged = userDescTotalRecharged.Default.(float64)
 	// userDescRpmLimit is the schema descriptor for rpm_limit field.
-	userDescRpmLimit := userFields[21].Descriptor()
+	userDescRpmLimit := userFields[24].Descriptor()
 	// user.DefaultRpmLimit holds the default value on creation for the rpm_limit field.
 	user.DefaultRpmLimit = userDescRpmLimit.Default.(int)
 	userallowedgroupFields := schema.UserAllowedGroup{}.Fields()

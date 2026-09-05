@@ -1,0 +1,10 @@
+FROM golang:1.27.0-alpine AS generator
+RUN apk add --no-cache git ca-certificates
+WORKDIR /app/backend
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend/ ./
+RUN go generate ./ent
+
+FROM scratch AS export
+COPY --from=generator /app/backend/ent /ent

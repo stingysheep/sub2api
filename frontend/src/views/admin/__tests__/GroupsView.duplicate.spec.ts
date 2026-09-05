@@ -1,4 +1,5 @@
 import { defineComponent } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,6 +14,11 @@ const {
   getUsageSummary,
   getCapacitySummary,
   getLiveCapability,
+  getUpstreamProviderProfiles,
+  getWebSearchEmulationConfig,
+  getSettings,
+  bulkUpdate,
+  batchTest,
   showSuccess,
   showError
 } = vi.hoisted(() => ({
@@ -23,6 +29,11 @@ const {
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
   getLiveCapability: vi.fn(),
+  getUpstreamProviderProfiles: vi.fn(),
+  getWebSearchEmulationConfig: vi.fn(),
+  getSettings: vi.fn(),
+  bulkUpdate: vi.fn(),
+  batchTest: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn()
 }))
@@ -44,7 +55,20 @@ vi.mock('@/api/admin', () => ({
     },
     accounts: {
       list: vi.fn(),
-      getById: vi.fn()
+      getById: vi.fn(),
+      addToGroup: vi.fn(),
+      removeFromGroup: vi.fn(),
+      update: vi.fn(),
+      bulkUpdate,
+      batchTest
+    },
+    settings: {
+      getUpstreamProviderProfiles,
+      getWebSearchEmulationConfig
+      , getSettings
+    },
+    tlsFingerprintProfiles: {
+      list: vi.fn().mockResolvedValue([])
     }
   }
 }))
@@ -170,6 +194,7 @@ function mountView() {
 
 describe('GroupsView duplicate action', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     localStorage.clear()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     for (const fn of [
@@ -180,6 +205,11 @@ describe('GroupsView duplicate action', () => {
       getUsageSummary,
       getCapacitySummary,
       getLiveCapability,
+      getUpstreamProviderProfiles,
+      getWebSearchEmulationConfig,
+      getSettings,
+      bulkUpdate,
+      batchTest,
       showSuccess,
       showError
     ]) {
@@ -203,6 +233,8 @@ describe('GroupsView duplicate action', () => {
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
     getLiveCapability.mockResolvedValue({ supported: false })
+    getWebSearchEmulationConfig.mockResolvedValue({ enabled: false })
+    getSettings.mockResolvedValue({ account_quota_notify_enabled: false })
   })
 
   afterEach(() => {

@@ -67,6 +67,21 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <div v-if="upstreamProfiles?.length" class="rounded-md border border-gray-200 p-3 dark:border-dark-700">
+        <label class="input-label">{{ t('admin.accounts.upstreamProfiles.select') }}</label>
+        <select v-model="selectedUpstreamProfileID" class="input">
+          <option :value="null">{{ t('admin.accounts.upstreamProfiles.none') }}</option>
+          <option v-for="profile in upstreamProfiles.filter(item => item.enabled)" :key="profile.id" :value="profile.id">
+            {{ profile.name }}
+          </option>
+        </select>
+        <p v-if="selectedUpstreamProfile" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          {{ selectedUpstreamProfile.name_prefix || t('admin.accounts.upstreamProfiles.noPrefix') }}
+          <span v-if="selectedUpstreamProfile.base_url" class="mx-1">·</span>
+          {{ selectedUpstreamProfile.base_url }}
+        </p>
+      </div>
+
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
@@ -1319,20 +1334,23 @@
               />
             </div>
           </div>
-          <p v-if="!cnSupportsNativeResponses(form.platform)" class="input-hint">
+          <p v-if="form.platform !== 'deepseek'" class="input-hint">
             {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
           </p>
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.apiKeyRequired') }}</label>
-          <input
+          <textarea
             v-model="apiKeyValue"
-            type="password"
+            rows="3"
             required
             class="input font-mono"
             :placeholder="apiKeyValuePlaceholder"
-          />
+            data-testid="create-account-api-key"
+          ></textarea>
           <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
+          <p class="input-hint">{{ t('admin.accounts.batchApiKeyHint') }}</p>
+          <p v-if="batchCreateError" class="whitespace-pre-line text-xs text-red-600 dark:text-red-400">{{ batchCreateError }}</p>
         </div>
 
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
@@ -3852,7 +3870,6 @@ import {
   applyAntigravityProjectID,
   applyHeaderOverride,
   applyInterceptWarmup,
-  cnSupportsNativeResponses,
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
   isHeaderOverrideCapable,
@@ -3879,6 +3896,8 @@ import {
   type OpenAIWSMode
 } from '@/utils/openaiWsMode'
 import OAuthAuthorizationFlow from './OAuthAuthorizationFlow.vue'
+import type { UpstreamProviderProfile } from '@/api/admin/settings'
+import { buildBatchAccountNames, parseMultilineValues } from '@/utils/batchAccountNames'
 
 // Type for exposed OAuthAuthorizationFlow component
 // Note: defineExpose automatically unwraps refs, so we use the unwrapped types
@@ -3971,6 +3990,10 @@ interface Props {
   show: boolean
   proxies: Proxy[]
   groups: AdminGroup[]
+  upstreamProfiles?: UpstreamProviderProfile[]
+  defaultUpstreamProfileId?: number | null
+  defaultPlatform?: AccountPlatform | null
+  existingAccountNames?: string[]
 }
 
 const props = defineProps<Props>()
@@ -4046,14 +4069,17 @@ const step = ref(1)
 const submitting = ref(false)
 const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_account'>('oauth-based') // UI selection for account category
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
+const selectedUpstreamProfileID = ref<number | null>(null)
+const appliedUpstreamProfilePrefix = ref('')
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
+const batchCreateError = ref('')
 const upstreamBillingAutoProbeEnabled = ref(true)
 
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）账号类型、API 协议与端点 ──
 const accountMode = ref<CnAccountMode>('payg')
 // API 协议决定转发端点与格式：cc=现有转换链，anthropic=原生直通（Claude Code），
-// responses=deepseek / kimi 原生 Responses 端点（Codex）。与账号类型正交。
+// responses=deepseek 原生 Responses 端点（Codex）。与账号类型正交。
 const apiProtocol = ref<CnApiProtocol>('adaptive')
 // 智谱团队版 Coding Plan：组织/项目 ID，写入 credentials 供额度探测切换团队端点
 const zhipuOrganization = ref('')
@@ -4074,14 +4100,14 @@ const cnPresetPlatform = computed<'kimi' | 'zhipu' | 'deepseek'>(() => {
   }
   return 'kimi'
 })
-// 当前平台可选的协议档（responses 仅 deepseek / kimi）。
+// 当前平台可选的协议档（responses 仅 deepseek）。
 const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: string }>>(() => {
   const opts: Array<{ value: CnApiProtocol; labelKey: string }> = [
     { value: 'adaptive', labelKey: 'adaptive' },
     { value: 'chat_completions', labelKey: 'chatCompletions' },
     { value: 'anthropic', labelKey: 'anthropic' }
   ]
-  if (cnSupportsNativeResponses(form.platform)) {
+  if (form.platform === 'deepseek') {
     opts.push({ value: 'responses', labelKey: 'responses' })
   }
   return opts
@@ -4091,7 +4117,7 @@ const cnAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; l
     { value: 'chat_completions', labelKey: 'chatCompletions' },
     { value: 'anthropic', labelKey: 'anthropic' }
   ]
-  if (cnSupportsNativeResponses(form.platform)) opts.push({ value: 'responses', labelKey: 'responses' })
+  if (form.platform === 'deepseek') opts.push({ value: 'responses', labelKey: 'responses' })
   return opts
 })
 
@@ -4576,6 +4602,41 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+const selectedUpstreamProfile = computed(() =>
+  (props.upstreamProfiles || []).find(profile => profile.id === selectedUpstreamProfileID.value) || null
+)
+
+const withUpstreamProviderProfileExtra = (extra?: Record<string, unknown>) => {
+  const result = { ...(extra || {}) }
+  if (selectedUpstreamProfileID.value != null) {
+    result.upstream_provider_profile_id = selectedUpstreamProfileID.value
+  }
+  return Object.keys(result).length > 0 ? result : undefined
+}
+
+const applyUpstreamProfile = (profile: UpstreamProviderProfile | null) => {
+  const currentName = form.name
+  const previousPrefix = appliedUpstreamProfilePrefix.value
+  const suffix = previousPrefix && currentName.startsWith(previousPrefix)
+    ? currentName.slice(previousPrefix.length)
+    : currentName
+  if (profile) {
+    form.name = `${profile.name_prefix}${suffix}`
+    appliedUpstreamProfilePrefix.value = profile.name_prefix
+    if (profile.base_url) {
+      apiKeyBaseUrl.value = profile.base_url
+      adaptiveBaseUrls.value.chat_completions = profile.base_url
+    }
+  } else if (previousPrefix && currentName.startsWith(previousPrefix)) {
+    form.name = currentName.slice(previousPrefix.length)
+    appliedUpstreamProfilePrefix.value = ''
+  }
+}
+
+watch(selectedUpstreamProfileID, (id) => {
+  applyUpstreamProfile((props.upstreamProfiles || []).find(profile => profile.id === id) || null)
+})
+
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
   // Antigravity upstream 类型不需要 OAuth 流程
@@ -4624,6 +4685,16 @@ watch(
   () => props.show,
   (newVal) => {
     if (newVal) {
+      batchCreateError.value = ''
+      const defaultProfile = (props.upstreamProfiles || []).find(profile =>
+        profile.id === props.defaultUpstreamProfileId && profile.enabled
+      )
+      if (defaultProfile) {
+        selectedUpstreamProfileID.value = defaultProfile.id
+      }
+      if (props.defaultPlatform) {
+        form.platform = props.defaultPlatform
+      }
       // Load TLS fingerprint profiles
       adminAPI.tlsFingerprintProfiles.list()
         .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })
@@ -4689,6 +4760,10 @@ watch(
             : newPlatform === 'grok'
               ? 'https://api.x.ai/v1'
               : 'https://api.anthropic.com'
+    }
+    if (selectedUpstreamProfile.value?.base_url) {
+      apiKeyBaseUrl.value = selectedUpstreamProfile.value.base_url
+      adaptiveBaseUrls.value.chat_completions = selectedUpstreamProfile.value.base_url
     }
     // Clear model-related settings
     allowedModels.value = []
@@ -5081,40 +5156,100 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
   }
 }
 
+const createAccountOnServer = async (payload: CreateAccountRequest) => {
+  const extra = withUpstreamRequestIdHeader(withUpstreamProviderProfileExtra(payload.extra))
+  const account = await adminAPI.accounts.create(withAntigravityConfirmFlag({ ...payload, extra }))
+  const modelMapping = payload.credentials.model_mapping
+  const hasConcreteMappedTarget = payload.type === 'apikey' &&
+    typeof modelMapping === 'object' &&
+    modelMapping !== null &&
+    Object.values(modelMapping).some((target) =>
+      typeof target === 'string' && target.trim() !== '' && !target.includes('*')
+    )
+  if (upstreamModelsPreviewed.value || hasConcreteMappedTarget) {
+    try {
+      const result = await adminAPI.accounts.syncUpstreamModels(account.id)
+      const warnings = result.warnings ?? []
+      if (warnings.some(warning => warning.code === 'upstream_model_metadata_incomplete')) {
+        appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
+      } else if (warnings.some(warning => warning.code === 'upstream_model_metadata_partial')) {
+        appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
+      }
+    } catch {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsFailed'))
+    }
+  }
+  if (payload.type === 'apikey' && payload.upstream_billing_probe_enabled === true) {
+    try {
+      await adminAPI.accounts.probeUpstreamBilling(account.id)
+    } catch {
+      appStore.showWarning(t('admin.accounts.upstreamBilling.probeFailed'))
+    }
+  }
+  return account
+}
+
+const createApiKeyBatch = async (payload: CreateAccountRequest, apiKeys: string[]) => {
+  const baseName = payload.name.trim()
+  const existingNames = new Set(props.existingAccountNames || [])
+  const plannedNames = buildBatchAccountNames(baseName, apiKeys.length, existingNames)
+  const reservedNames = new Set([...existingNames, ...plannedNames])
+  const errors: string[] = []
+  let successCount = 0
+
+  const runBatch = async () => {
+    submitting.value = true
+    batchCreateError.value = ''
+    try {
+      for (let index = 0; index < apiKeys.length; index += 1) {
+        let accountName = plannedNames[index]
+        let created = false
+        for (let attempt = 0; attempt < 20 && !created; attempt += 1) {
+          try {
+            await createAccountOnServer({
+              ...payload,
+              name: accountName,
+              credentials: { ...payload.credentials, api_key: apiKeys[index] }
+            })
+            successCount += 1
+            created = true
+          } catch (error: any) {
+            if (error.response?.status === 409 && attempt < 19) {
+              const nextName = buildBatchAccountNames(baseName, 1, reservedNames)[0]
+              reservedNames.add(nextName)
+              accountName = nextName
+              continue
+            }
+            errors.push(`#${index + 1} ${accountName}: ${error.response?.data?.detail || error.response?.data?.message || error.message || t('admin.accounts.failedToCreate')}`)
+          }
+        }
+      }
+
+      if (successCount > 0 && errors.length === 0) {
+        appStore.showSuccess(t('admin.accounts.batchApiKeyCreated', { count: successCount }))
+        emit('created')
+        handleClose()
+      } else if (successCount > 0) {
+        appStore.showWarning(t('admin.accounts.batchApiKeyPartial', { success: successCount, failed: errors.length }))
+        batchCreateError.value = errors.join('\n')
+        emit('created')
+      } else {
+        batchCreateError.value = errors.join('\n')
+        appStore.showError(t('admin.accounts.batchApiKeyFailed'))
+      }
+    } finally {
+      submitting.value = false
+    }
+  }
+
+  const canContinue = await ensureAntigravityMixedChannelConfirmed(runBatch)
+  if (canContinue) await runBatch()
+}
+
 const submitCreateAccount = async (payload: CreateAccountRequest) => {
   submitting.value = true
   try {
-    const account = await adminAPI.accounts.create(withAntigravityConfirmFlag(payload))
-    const modelMapping = payload.credentials.model_mapping
-    const hasConcreteMappedTarget = payload.type === 'apikey' &&
-      typeof modelMapping === 'object' &&
-      modelMapping !== null &&
-      Object.values(modelMapping).some((target) =>
-        typeof target === 'string' && target.trim() !== '' && !target.includes('*')
-      )
-    if (upstreamModelsPreviewed.value || hasConcreteMappedTarget) {
-      try {
-        const result = await adminAPI.accounts.syncUpstreamModels(account.id)
-        const warnings = result.warnings ?? []
-        if (warnings.some(warning => warning.code === 'upstream_model_metadata_incomplete')) {
-          appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
-        } else if (warnings.some(warning => warning.code === 'upstream_model_metadata_partial')) {
-          appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
-        }
-      } catch {
-        appStore.showWarning(t('admin.accounts.syncUpstreamModelsFailed'))
-      }
-    }
-    if (
-      payload.type === 'apikey' &&
-      payload.upstream_billing_probe_enabled === true
-    ) {
-      try {
-        await adminAPI.accounts.probeUpstreamBilling(account.id)
-      } catch {
-        appStore.showWarning(t('admin.accounts.upstreamBilling.probeFailed'))
-      }
-    }
+    await createAccountOnServer(payload)
     appStore.showSuccess(t('admin.accounts.accountCreated'))
     emit('created')
     handleClose()
@@ -5150,6 +5285,8 @@ const resetForm = () => {
   form.rate_multiplier = 1
   form.group_ids = []
   form.expires_at = null
+  selectedUpstreamProfileID.value = null
+  appliedUpstreamProfilePrefix.value = ''
   accountCategory.value = 'oauth-based'
   addMethod.value = 'oauth'
   accountMode.value = 'payg'
@@ -5158,6 +5295,7 @@ const resetForm = () => {
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
   upstreamRequestIdHeader.value = ''
+  batchCreateError.value = ''
   upstreamBillingAutoProbeEnabled.value = true
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
@@ -5701,16 +5839,25 @@ const handleSubmit = async () => {
     return
   }
 
-  form.credentials = credentials
   const extra = buildAnthropicExtra(buildOpenAIExtra())
-
-  await doCreateAccount({
+  const createPayload: CreateAccountRequest = {
     ...form,
+    credentials,
     group_ids: form.group_ids,
     extra: withUpstreamRequestIdHeader(extra),
     upstream_billing_probe_enabled: upstreamBillingAutoProbeEnabled.value,
     auto_pause_on_expired: autoPauseOnExpired.value
-  })
+  }
+  const apiKeys = parseMultilineValues(apiKeyValue.value)
+  if (!form.name.trim()) {
+    appStore.showError(t('admin.accounts.pleaseEnterAccountName'))
+    return
+  }
+  if (apiKeys.length > 1) {
+    await createApiKeyBatch(createPayload, apiKeys)
+    return
+  }
+  await doCreateAccount(createPayload)
 }
 
 const goBackToBasicInfo = () => {
@@ -5896,7 +6043,7 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
           platform: 'grok',
           type: 'oauth',
           credentials,
-          extra: withUpstreamRequestIdHeader(extra),
+          extra: withUpstreamRequestIdHeader(withUpstreamProviderProfileExtra(extra)),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
@@ -6073,7 +6220,7 @@ const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
           platform: 'grok',
           type: 'oauth',
           credentials,
-          extra: withUpstreamRequestIdHeader(extra),
+          extra: withUpstreamRequestIdHeader(withUpstreamProviderProfileExtra(extra)),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
@@ -6172,7 +6319,7 @@ const handleOpenAIExchange = async (authCode: string) => {
         platform: 'openai',
         type: 'oauth',
         credentials,
-        extra: withUpstreamRequestIdHeader(extra),
+        extra: withUpstreamRequestIdHeader(withUpstreamProviderProfileExtra(extra)),
         proxy_id: form.proxy_id,
         concurrency: form.concurrency,
         load_factor: form.load_factor ?? undefined,
@@ -6287,7 +6434,7 @@ const handleOpenAIImportCodexSession = async (content: string) => {
       expires_at: form.expires_at,
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
-      extra: withUpstreamRequestIdHeader(extra),
+      extra: withUpstreamRequestIdHeader(withUpstreamProviderProfileExtra(extra)),
       update_existing: true
     })
 
@@ -6453,7 +6600,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
             platform: 'openai',
             type: 'oauth',
             credentials,
-            extra: withUpstreamRequestIdHeader(extra),
+            extra: withUpstreamRequestIdHeader(withUpstreamProviderProfileExtra(extra)),
             proxy_id: form.proxy_id,
             concurrency: form.concurrency,
             load_factor: form.load_factor ?? undefined,
@@ -6933,7 +7080,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           platform: form.platform,
           type: addMethod.value, // Use addMethod as type: 'oauth' or 'setup-token'
           credentials,
-          extra: withUpstreamRequestIdHeader(extra),
+          extra: withUpstreamRequestIdHeader(withUpstreamProviderProfileExtra(extra)),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,

@@ -70,9 +70,10 @@ type RedeemCodeRepository interface {
 
 // GenerateCodesRequest 生成兑换码请求
 type GenerateCodesRequest struct {
-	Count int     `json:"count"`
-	Value float64 `json:"value"`
-	Type  string  `json:"type"`
+	Count         int           `json:"count"`
+	Value         float64       `json:"value"`
+	Type          string        `json:"type"`
+	BalanceSource BalanceSource `json:"balance_source"`
 }
 
 // RedeemCodeResponse 兑换码响应
@@ -225,10 +226,11 @@ func (s *RedeemService) GenerateCodes(ctx context.Context, req GenerateCodesRequ
 		}
 
 		codes = append(codes, RedeemCode{
-			Code:   code,
-			Type:   codeType,
-			Value:  value,
-			Status: StatusUnused,
+			Code:          code,
+			Type:          codeType,
+			Value:         value,
+			BalanceSource: NormalizeBalanceSource(req.BalanceSource),
+			Status:        StatusUnused,
 		})
 	}
 
@@ -464,7 +466,7 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 			if err := s.redeemUserRepo.ApplyRedeemBalanceAdjustment(txCtx, userID, amount); err != nil {
 				return nil, fmt.Errorf("update user balance: %w", err)
 			}
-		} else if err := s.userRepo.UpdateBalance(txCtx, userID, amount); err != nil {
+		} else if err := s.userRepo.UpdateBalance(WithBalanceSource(txCtx, NormalizeBalanceSource(redeemCode.BalanceSource)), userID, amount); err != nil {
 			return nil, fmt.Errorf("update user balance: %w", err)
 		}
 

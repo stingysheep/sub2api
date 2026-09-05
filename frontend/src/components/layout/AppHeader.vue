@@ -21,6 +21,12 @@
         </div>
       </div>
 
+      <!-- Dashboard announcement between page context and utility controls -->
+      <DashboardAnnouncementBar
+        v-if="showDashboardAnnouncement"
+        :is-admin="authStore.isAdmin"
+      />
+
       <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
       <div class="flex min-w-0 items-center gap-1 sm:gap-3">
         <!-- Announcement Bell -->
@@ -258,6 +264,7 @@ import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
+import DashboardAnnouncementBar from '@/components/common/DashboardAnnouncementBar.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
@@ -284,6 +291,9 @@ const balanceAvailableText = computed(() => t('common.availableBalance') === 'co
 const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
 const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))
 const balanceFrozenLabel = computed(() => `${balanceFrozenText.value} ${formatHeaderMoney(frozenBalance.value)}`)
+const showDashboardAnnouncement = computed(() => {
+  return Boolean(user.value) && (route.name === 'Dashboard' || route.name === 'AdminDashboard')
+})
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {

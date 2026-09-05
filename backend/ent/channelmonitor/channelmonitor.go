@@ -39,6 +39,10 @@ const (
 	FieldExtraModels = "extra_models"
 	// FieldGroupName holds the string denoting the group_name field in the database.
 	FieldGroupName = "group_name"
+	// FieldMonitorGroupID holds the string denoting the monitor_group_id field in the database.
+	FieldMonitorGroupID = "monitor_group_id"
+	// FieldMonitorSortOrder holds the string denoting the monitor_sort_order field in the database.
+	FieldMonitorSortOrder = "monitor_sort_order"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
 	// FieldIntervalSeconds holds the string denoting the interval_seconds field in the database.
@@ -103,6 +107,8 @@ var Columns = []string{
 	FieldPrimaryModel,
 	FieldExtraModels,
 	FieldGroupName,
+	FieldMonitorGroupID,
+	FieldMonitorSortOrder,
 	FieldEnabled,
 	FieldIntervalSeconds,
 	FieldJitterSeconds,
@@ -153,6 +159,8 @@ var (
 	DefaultGroupName string
 	// GroupNameValidator is a validator for the "group_name" field. It is called by the builders before save.
 	GroupNameValidator func(string) error
+	// DefaultMonitorSortOrder holds the default value on creation for the "monitor_sort_order" field.
+	DefaultMonitorSortOrder int
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
 	// IntervalSecondsValidator is a validator for the "interval_seconds" field. It is called by the builders before save.
@@ -259,6 +267,16 @@ func ByPrimaryModel(opts ...sql.OrderTermOption) OrderOption {
 // ByGroupName orders the results by the group_name field.
 func ByGroupName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupName, opts...).ToFunc()
+}
+
+// ByMonitorGroupID orders the results by the monitor_group_id field.
+func ByMonitorGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorGroupID, opts...).ToFunc()
+}
+
+// ByMonitorSortOrder orders the results by the monitor_sort_order field.
+func ByMonitorSortOrder(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorSortOrder, opts...).ToFunc()
 }
 
 // ByEnabled orders the results by the enabled field.

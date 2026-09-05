@@ -301,6 +301,7 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	users := admin.Group("/users")
 	{
 		users.GET("", h.Admin.User.List)
+		users.GET("/paid-balance-summary", h.Admin.User.GetPaidBalanceSummary)
 		users.GET("/:id", h.Admin.User.GetByID)
 		users.POST("/:id/auth-identities", h.Admin.User.BindAuthIdentity)
 		users.POST("", h.Admin.User.Create)
@@ -366,6 +367,9 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.PUT("/ollama-cloud-usage/settings", h.Admin.Account.UpdateOllamaCloudUsageSettings)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
 		accounts.POST("", h.Admin.Account.Create)
+		accounts.POST("/:id/groups/:group_id", h.Admin.Account.AddToGroup)
+		accounts.DELETE("/:id/groups/:group_id", h.Admin.Account.RemoveFromGroup)
+		accounts.PUT("/:id/groups/:group_id/priority", h.Admin.Account.UpdateGroupPriority)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
 		accounts.POST("/import/codex-session", h.Admin.Account.ImportCodexSession)
@@ -381,6 +385,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/ollama-cloud-usage/refresh", h.Admin.Account.RefreshOllamaCloudUsage)
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
+		accounts.POST("/batch-test", h.Admin.Account.BatchTest)
+		accounts.POST("/batch-sync-upstream-models", h.Admin.Account.BatchSyncUpstreamModels)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/apply-oauth-credentials", h.Admin.Account.ApplyOAuthCredentials)
@@ -557,6 +563,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		adminSettings.GET("", h.Admin.Setting.GetSettings)
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
+		adminSettings.GET("/upstream-providers", h.Admin.Setting.GetUpstreamProviderProfiles)
+		adminSettings.PUT("/upstream-providers", h.Admin.Setting.UpdateUpstreamProviderProfiles)
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
 		adminSettings.GET("/email-templates", h.Admin.Setting.ListEmailTemplates)
@@ -692,6 +700,7 @@ func registerUsageRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		usage.GET("", h.Admin.Usage.List)
 		usage.GET("/stats", h.Admin.Usage.Stats)
+		usage.GET("/profit-breakdown", h.Admin.Usage.ProfitBreakdown)
 		usage.GET("/search-users", h.Admin.Usage.SearchUsers)
 		usage.GET("/search-api-keys", h.Admin.Usage.SearchAPIKeys)
 		usage.GET("/cleanup-tasks", h.Admin.Usage.ListCleanupTasks)
@@ -782,12 +791,23 @@ func registerChannelMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers, s
 	{
 		monitors.GET("", h.Admin.ChannelMonitor.List)
 		monitors.POST("", h.Admin.ChannelMonitor.Create)
+		monitors.PUT("/sort-order", h.Admin.ChannelMonitor.UpdateMonitorSortOrder)
 		monitors.GET("/:id", h.Admin.ChannelMonitor.Get)
 		monitors.POST("/:id/duplicate", h.Admin.ChannelMonitor.Duplicate)
 		monitors.PUT("/:id", h.Admin.ChannelMonitor.Update)
 		monitors.DELETE("/:id", h.Admin.ChannelMonitor.Delete)
 		monitors.POST("/:id/run", h.Admin.ChannelMonitor.Run)
 		monitors.GET("/:id/history", h.Admin.ChannelMonitor.History)
+	}
+
+	groups := admin.Group("/channel-monitor-groups")
+	groups.Use(guard)
+	{
+		groups.GET("", h.Admin.ChannelMonitor.ListGroups)
+		groups.POST("", h.Admin.ChannelMonitor.CreateGroup)
+		groups.PUT("/sort-order", h.Admin.ChannelMonitor.UpdateGroupSortOrder)
+		groups.PUT("/:id", h.Admin.ChannelMonitor.UpdateGroup)
+		groups.DELETE("/:id", h.Admin.ChannelMonitor.DeleteGroup)
 	}
 
 	templates := admin.Group("/channel-monitor-templates")

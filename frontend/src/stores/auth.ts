@@ -14,6 +14,15 @@ import type {
   ActionCaptchaRequestProof
 } from '@/types'
 
+function isLocalPreviewToken(token: string | null): boolean {
+  return Boolean(
+    token?.startsWith('local-preview-') &&
+      typeof window !== 'undefined' &&
+      ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname) &&
+      (import.meta.env.DEV || import.meta.env.VITE_LOCAL_LOGIN_SHORTCUTS === 'true'),
+  )
+}
+
 const AUTH_TOKEN_KEY = 'auth_token'
 const AUTH_USER_KEY = 'auth_user'
 const REFRESH_TOKEN_KEY = 'refresh_token'
@@ -120,10 +129,13 @@ export const useAuthStore = defineStore('auth', () => {
         refreshTokenValue.value = savedRefreshToken
         tokenExpiresAt.value = savedExpiresAt ? parseInt(savedExpiresAt, 10) : null
 
-        // Immediately refresh user data from backend (async, don't block)
-        refreshUser().catch((error) => {
-          console.error('Failed to refresh user on init:', error)
-        })
+        // Local preview sessions are intentionally browser-only and must never
+        // be sent to a real backend during page refresh.
+        if (!isLocalPreviewToken(savedToken)) {
+          refreshUser().catch((error) => {
+            console.error('Failed to refresh user on init:', error)
+          })
+        }
 
         // Start auto-refresh interval for user data
         startAutoRefresh()
@@ -261,6 +273,48 @@ export const useAuthStore = defineStore('auth', () => {
       clearAuth({ preservePendingAuthSession: pendingAuthSession.value !== null })
       throw error
     }
+  }
+
+  /**
+   * Create an isolated loopback-only preview session without contacting an API.
+   * This is used by the local UI preview when no backend is available. The
+   * caller gates access by build flag and hostname; the token is deliberately
+   * marked as non-production and must never be sent to a real server.
+   */
+  function loginLocalPreview(role: 'admin' | 'user'): User {
+    stopAutoRefresh()
+    stopTokenRefresh()
+
+    const previewUser: User = {
+      id: role === 'admin' ? 1 : 2,
+      username: role === 'admin' ? 'preview-admin' : 'preview-user',
+      email: role === 'admin' ? 'admin@preview.local' : 'user@preview.local',
+      role,
+      balance: role === 'admin' ? 0 : 100,
+      frozen_balance: 0,
+      concurrency: 4,
+      status: 'active',
+      allowed_groups: null,
+      balance_notify_enabled: false,
+      balance_notify_threshold: null,
+      balance_notify_extra_emails: [],
+      created_at: new Date(0).toISOString(),
+      updated_at: new Date(0).toISOString(),
+    }
+
+    const previewToken = `local-preview-${role}`
+    token.value = previewToken
+    refreshTokenValue.value = null
+    tokenExpiresAt.value = null
+    runMode.value = 'standard'
+    user.value = previewUser
+    localStorage.setItem(AUTH_TOKEN_KEY, previewToken)
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(previewUser))
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
+    localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
+    clearPendingAuthSession()
+
+    return previewUser
   }
 
   /**
@@ -437,6 +491,11 @@ export const useAuthStore = defineStore('auth', () => {
       throw new Error('Not authenticated')
     }
 
+    if (isLocalPreviewToken(token.value)) {
+      if (!user.value) throw new Error('Local preview user is unavailable')
+      return user.value
+    }
+
     try {
       const response = await authAPI.getCurrentUser()
       if (response.data.run_mode) {
@@ -503,6 +562,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Actions
     login,
+    loginLocalPreview,
     loginWithPasskey,
     login2FA,
     register,

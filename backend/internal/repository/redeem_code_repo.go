@@ -23,10 +23,12 @@ func NewRedeemCodeRepository(client *dbent.Client) service.RedeemCodeRepository 
 }
 
 func (r *redeemCodeRepository) Create(ctx context.Context, code *service.RedeemCode) error {
-	created, err := r.client.RedeemCode.Create().
+	client := clientFromContext(ctx, r.client)
+	created, err := client.RedeemCode.Create().
 		SetCode(code.Code).
 		SetType(code.Type).
 		SetValue(code.Value).
+		SetBalanceSource(string(service.NormalizeBalanceSource(code.BalanceSource))).
 		SetStatus(code.Status).
 		SetNotes(code.Notes).
 		SetValidityDays(code.ValidityDays).
@@ -47,13 +49,15 @@ func (r *redeemCodeRepository) CreateBatch(ctx context.Context, codes []service.
 		return nil
 	}
 
+	client := clientFromContext(ctx, r.client)
 	builders := make([]*dbent.RedeemCodeCreate, 0, len(codes))
 	for i := range codes {
 		c := &codes[i]
-		b := r.client.RedeemCode.Create().
+		b := client.RedeemCode.Create().
 			SetCode(c.Code).
 			SetType(c.Type).
 			SetValue(c.Value).
+			SetBalanceSource(string(service.NormalizeBalanceSource(c.BalanceSource))).
 			SetStatus(c.Status).
 			SetNotes(c.Notes).
 			SetValidityDays(c.ValidityDays).
@@ -64,11 +68,15 @@ func (r *redeemCodeRepository) CreateBatch(ctx context.Context, codes []service.
 		builders = append(builders, b)
 	}
 
-	return r.client.RedeemCode.CreateBulk(builders...).Exec(ctx)
+	if err := client.RedeemCode.CreateBulk(builders...).Exec(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *redeemCodeRepository) GetByID(ctx context.Context, id int64) (*service.RedeemCode, error) {
-	m, err := r.client.RedeemCode.Query().
+	client := clientFromContext(ctx, r.client)
+	m, err := client.RedeemCode.Query().
 		Where(redeemcode.IDEQ(id)).
 		Only(ctx)
 	if err != nil {
@@ -81,7 +89,8 @@ func (r *redeemCodeRepository) GetByID(ctx context.Context, id int64) (*service.
 }
 
 func (r *redeemCodeRepository) GetByCode(ctx context.Context, code string) (*service.RedeemCode, error) {
-	m, err := r.client.RedeemCode.Query().
+	client := clientFromContext(ctx, r.client)
+	m, err := client.RedeemCode.Query().
 		Where(redeemcode.CodeEQ(code)).
 		Only(ctx)
 	if err != nil {
@@ -94,7 +103,8 @@ func (r *redeemCodeRepository) GetByCode(ctx context.Context, code string) (*ser
 }
 
 func (r *redeemCodeRepository) Delete(ctx context.Context, id int64) error {
-	_, err := r.client.RedeemCode.Delete().Where(redeemcode.IDEQ(id)).Exec(ctx)
+	client := clientFromContext(ctx, r.client)
+	_, err := client.RedeemCode.Delete().Where(redeemcode.IDEQ(id)).Exec(ctx)
 	return err
 }
 
@@ -103,7 +113,8 @@ func (r *redeemCodeRepository) List(ctx context.Context, params pagination.Pagin
 }
 
 func (r *redeemCodeRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, codeType, status, search string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
-	q := r.client.RedeemCode.Query()
+	client := clientFromContext(ctx, r.client)
+	q := client.RedeemCode.Query()
 
 	if codeType != "" {
 		q = q.Where(redeemcode.TypeEQ(codeType))
@@ -196,7 +207,8 @@ func redeemCodeListOrder(params pagination.PaginationParams) []func(*entsql.Sele
 }
 
 func (r *redeemCodeRepository) Update(ctx context.Context, code *service.RedeemCode) error {
-	up := r.client.RedeemCode.UpdateOneID(code.ID).
+	client := clientFromContext(ctx, r.client)
+	up := client.RedeemCode.UpdateOneID(code.ID).
 		SetCode(code.Code).
 		SetType(code.Type).
 		SetValue(code.Value).
@@ -344,7 +356,8 @@ func (r *redeemCodeRepository) ListByUser(ctx context.Context, userID int64, lim
 		limit = 10
 	}
 
-	codes, err := r.client.RedeemCode.Query().
+	client := clientFromContext(ctx, r.client)
+	codes, err := client.RedeemCode.Query().
 		Where(redeemcode.UsedByEQ(userID)).
 		WithGroup().
 		Order(dbent.Desc(redeemcode.FieldUsedAt)).
@@ -354,13 +367,15 @@ func (r *redeemCodeRepository) ListByUser(ctx context.Context, userID int64, lim
 		return nil, err
 	}
 
-	return redeemCodeEntitiesToService(codes), nil
+	out := redeemCodeEntitiesToService(codes)
+	return out, nil
 }
 
 // ListByUserPaginated returns paginated balance/concurrency history for a user.
 // Supports optional type filter (e.g. "balance", "admin_balance", "concurrency", "admin_concurrency", "subscription").
 func (r *redeemCodeRepository) ListByUserPaginated(ctx context.Context, userID int64, params pagination.PaginationParams, codeType string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
-	q := r.client.RedeemCode.Query().
+	client := clientFromContext(ctx, r.client)
+	q := client.RedeemCode.Query().
 		Where(redeemcode.UsedByEQ(userID))
 
 	// Optional type filter
@@ -383,15 +398,17 @@ func (r *redeemCodeRepository) ListByUserPaginated(ctx context.Context, userID i
 		return nil, nil, err
 	}
 
-	return redeemCodeEntitiesToService(codes), paginationResultFromTotal(int64(total), params), nil
+	out := redeemCodeEntitiesToService(codes)
+	return out, paginationResultFromTotal(int64(total), params), nil
 }
 
 // SumPositiveBalanceByUser returns total recharged amount (sum of value > 0 where type is balance/admin_balance).
 func (r *redeemCodeRepository) SumPositiveBalanceByUser(ctx context.Context, userID int64) (float64, error) {
+	client := clientFromContext(ctx, r.client)
 	var result []struct {
 		Sum float64 `json:"sum"`
 	}
-	err := r.client.RedeemCode.Query().
+	err := client.RedeemCode.Query().
 		Where(
 			redeemcode.UsedByEQ(userID),
 			redeemcode.ValueGT(0),
@@ -413,18 +430,19 @@ func redeemCodeEntityToService(m *dbent.RedeemCode) *service.RedeemCode {
 		return nil
 	}
 	out := &service.RedeemCode{
-		ID:           m.ID,
-		Code:         m.Code,
-		Type:         m.Type,
-		Value:        m.Value,
-		Status:       m.Status,
-		UsedBy:       m.UsedBy,
-		UsedAt:       m.UsedAt,
-		Notes:        derefString(m.Notes),
-		CreatedAt:    m.CreatedAt,
-		ExpiresAt:    m.ExpiresAt,
-		GroupID:      m.GroupID,
-		ValidityDays: m.ValidityDays,
+		ID:            m.ID,
+		Code:          m.Code,
+		Type:          m.Type,
+		Value:         m.Value,
+		BalanceSource: service.NormalizeBalanceSource(service.BalanceSource(m.BalanceSource)),
+		Status:        m.Status,
+		UsedBy:        m.UsedBy,
+		UsedAt:        m.UsedAt,
+		Notes:         derefString(m.Notes),
+		CreatedAt:     m.CreatedAt,
+		ExpiresAt:     m.ExpiresAt,
+		GroupID:       m.GroupID,
+		ValidityDays:  m.ValidityDays,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)

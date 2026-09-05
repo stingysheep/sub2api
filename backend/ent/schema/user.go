@@ -49,6 +49,15 @@ func (User) Fields() []ent.Field {
 		field.Float("balance").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),
+		field.Float("free_balance").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Default(0),
+		field.Float("paid_balance").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Default(0),
+		field.Float("free_balance_issued").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Default(0.0),
 		field.Float("frozen_balance").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),

@@ -31,6 +31,7 @@ type dashboardTrendCacheKey struct {
 	NativeCompactionV2    *bool  `json:"native_compaction_v2"`
 	BillingType           *int8  `json:"billing_type"`
 	UpstreamModelMismatch *bool  `json:"upstream_model_mismatch"`
+	UserRole              string `json:"user_role"`
 }
 
 type dashboardModelGroupCacheKey struct {
@@ -46,6 +47,7 @@ type dashboardModelGroupCacheKey struct {
 	NativeCompactionV2    *bool  `json:"native_compaction_v2"`
 	BillingType           *int8  `json:"billing_type"`
 	UpstreamModelMismatch *bool  `json:"upstream_model_mismatch"`
+	UserRole              string `json:"user_role"`
 }
 
 type dashboardEntityTrendCacheKey struct {
@@ -53,6 +55,7 @@ type dashboardEntityTrendCacheKey struct {
 	EndTime     string `json:"end_time"`
 	Granularity string `json:"granularity"`
 	Limit       int    `json:"limit"`
+	UserRole    string `json:"user_role,omitempty"`
 }
 
 func cacheStatusValue(hit bool) string {
@@ -90,6 +93,7 @@ func (h *DashboardHandler) getUsageTrendCached(
 	nativeCompactionV2 *bool,
 	billingType *int8,
 	upstreamModelMismatch *bool,
+	userRole string,
 ) ([]usagestats.TrendDataPoint, bool, error) {
 	key := mustMarshalDashboardCacheKey(dashboardTrendCacheKey{
 		StartTime:             startTime.UTC().Format(time.RFC3339),
@@ -105,12 +109,14 @@ func (h *DashboardHandler) getUsageTrendCached(
 		NativeCompactionV2:    nativeCompactionV2,
 		BillingType:           billingType,
 		UpstreamModelMismatch: upstreamModelMismatch,
+		UserRole:              userRole,
 	})
 	entry, hit, err := dashboardTrendCache.GetOrLoad(key, func() (any, error) {
 		return h.dashboardService.GetUsageTrendWithUsageFilters(ctx, startTime, endTime, granularity, usagestats.UsageLogFilters{
 			UserID: userID, APIKeyID: apiKeyID, AccountID: accountID, GroupID: groupID,
 			Model: model, RequestType: requestType, Stream: stream, NativeCompactionV2: nativeCompactionV2, BillingType: billingType,
 			UpstreamModelMismatch: upstreamModelMismatch,
+			UserRole:              userRole,
 		})
 	})
 	if err != nil {
@@ -130,6 +136,7 @@ func (h *DashboardHandler) getModelStatsCached(
 	nativeCompactionV2 *bool,
 	billingType *int8,
 	upstreamModelMismatch *bool,
+	userRole string,
 ) ([]usagestats.ModelStat, bool, error) {
 	key := mustMarshalDashboardCacheKey(dashboardModelGroupCacheKey{
 		StartTime:             startTime.UTC().Format(time.RFC3339),
@@ -144,12 +151,14 @@ func (h *DashboardHandler) getModelStatsCached(
 		NativeCompactionV2:    nativeCompactionV2,
 		BillingType:           billingType,
 		UpstreamModelMismatch: upstreamModelMismatch,
+		UserRole:              userRole,
 	})
 	entry, hit, err := dashboardModelStatsCache.GetOrLoad(key, func() (any, error) {
 		return h.dashboardService.GetModelStatsWithUsageFiltersBySource(ctx, startTime, endTime, usagestats.UsageLogFilters{
 			UserID: userID, APIKeyID: apiKeyID, AccountID: accountID, GroupID: groupID,
 			RequestType: requestType, Stream: stream, NativeCompactionV2: nativeCompactionV2, BillingType: billingType,
 			UpstreamModelMismatch: upstreamModelMismatch,
+			UserRole:              userRole,
 		}, modelSource)
 	})
 	if err != nil {
@@ -168,6 +177,7 @@ func (h *DashboardHandler) getGroupStatsCached(
 	nativeCompactionV2 *bool,
 	billingType *int8,
 	upstreamModelMismatch *bool,
+	userRole string,
 ) ([]usagestats.GroupStat, bool, error) {
 	key := mustMarshalDashboardCacheKey(dashboardModelGroupCacheKey{
 		StartTime:             startTime.UTC().Format(time.RFC3339),
@@ -181,12 +191,14 @@ func (h *DashboardHandler) getGroupStatsCached(
 		NativeCompactionV2:    nativeCompactionV2,
 		BillingType:           billingType,
 		UpstreamModelMismatch: upstreamModelMismatch,
+		UserRole:              userRole,
 	})
 	entry, hit, err := dashboardGroupStatsCache.GetOrLoad(key, func() (any, error) {
 		return h.dashboardService.GetGroupStatsWithUsageFilters(ctx, startTime, endTime, usagestats.UsageLogFilters{
 			UserID: userID, APIKeyID: apiKeyID, AccountID: accountID, GroupID: groupID,
 			RequestType: requestType, Stream: stream, NativeCompactionV2: nativeCompactionV2, BillingType: billingType,
 			UpstreamModelMismatch: upstreamModelMismatch,
+			UserRole:              userRole,
 		})
 	})
 	if err != nil {
@@ -213,15 +225,16 @@ func (h *DashboardHandler) getAPIKeyUsageTrendCached(ctx context.Context, startT
 	return trend, hit, err
 }
 
-func (h *DashboardHandler) getUserUsageTrendCached(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserUsageTrendPoint, bool, error) {
+func (h *DashboardHandler) getUserUsageTrendCached(ctx context.Context, startTime, endTime time.Time, granularity string, limit int, userRole string) ([]usagestats.UserUsageTrendPoint, bool, error) {
 	key := mustMarshalDashboardCacheKey(dashboardEntityTrendCacheKey{
 		StartTime:   startTime.UTC().Format(time.RFC3339),
 		EndTime:     endTime.UTC().Format(time.RFC3339),
 		Granularity: granularity,
 		Limit:       limit,
+		UserRole:    userRole,
 	})
 	entry, hit, err := dashboardUsersTrendCache.GetOrLoad(key, func() (any, error) {
-		return h.dashboardService.GetUserUsageTrend(ctx, startTime, endTime, granularity, limit)
+		return h.dashboardService.GetUserUsageTrendWithRole(ctx, startTime, endTime, granularity, limit, userRole)
 	})
 	if err != nil {
 		return nil, hit, err

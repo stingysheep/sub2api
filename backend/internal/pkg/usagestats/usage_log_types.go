@@ -187,6 +187,7 @@ type UserBreakdownDimension struct {
 	EndpointType string // "inbound", "upstream", or "path"
 	// Additional filter conditions
 	UserID             int64  // filter by user_id (>0 to enable)
+	UserRole           string // filter by active users with role admin/user
 	APIKeyID           int64  // filter by api_key_id (>0 to enable)
 	AccountID          int64  // filter by account_id (>0 to enable)
 	RequestType        *int16 // filter by request_type (non-nil to enable)
@@ -269,19 +270,26 @@ type PlatformDashboardStats struct {
 
 // UsageLogFilters represents filters for usage log queries
 type UsageLogFilters struct {
-	UserID    int64
+	UserID int64
+	// UserRole optionally scopes usage to active users with this role (admin/user).
+	UserRole  string
 	APIKeyID  int64
 	AccountID int64
 	GroupID   int64
 	RequestID string
 	Model     string
 	// ModelFilterSource controls how Model is matched. Empty preserves raw usage_logs.model semantics.
-	ModelFilterSource     string
-	RequestType           *int16
-	Stream                *bool
-	NativeCompactionV2    *bool
-	BillingType           *int8
-	BillingMode           string
+	ModelFilterSource  string
+	RequestType        *int16
+	Stream             *bool
+	NativeCompactionV2 *bool
+	BillingType        *int8
+	BillingMode        string
+	// AccountCostBasis controls how account cost is calculated for summary views.
+	// Empty uses the immutable multiplier snapshot recorded on each usage log;
+	// current_account_rate uses the account's current configured multiplier,
+	// intended for historical profit estimates when old logs lack reliable snapshots.
+	AccountCostBasis      string
 	UpstreamModelMismatch *bool
 	StartTime             *time.Time
 	EndTime               *time.Time
@@ -301,10 +309,33 @@ type UsageStats struct {
 	TotalCost                float64        `json:"total_cost"`
 	TotalActualCost          float64        `json:"total_actual_cost"`
 	TotalAccountCost         *float64       `json:"total_account_cost,omitempty"`
+	TotalFreeBalanceCost     float64        `json:"total_free_balance_cost"`
+	TotalPaidBalanceCost     float64        `json:"total_paid_balance_cost"`
+	TotalUnfundedCost        float64        `json:"total_unfunded_cost"`
+	TotalFreeUpstreamCost    float64        `json:"total_free_upstream_cost"`
+	TotalPaidUpstreamCost    float64        `json:"total_paid_upstream_cost"`
+	TotalFreeBalanceIssued   float64        `json:"total_free_balance_issued"`
+	TotalFreeBalanceConsumed float64        `json:"total_free_balance_consumed"`
 	AverageDurationMs        float64        `json:"average_duration_ms"`
 	Endpoints                []EndpointStat `json:"endpoints,omitempty"`
 	UpstreamEndpoints        []EndpointStat `json:"upstream_endpoints,omitempty"`
 	EndpointPaths            []EndpointStat `json:"endpoint_paths,omitempty"`
+}
+
+type ProfitBreakdownItem struct {
+	GroupID          int64   `json:"group_id"`
+	GroupName        string  `json:"group_name"`
+	Requests         int64   `json:"requests"`
+	PaidRevenue      float64 `json:"paid_revenue"`
+	UpstreamCost     float64 `json:"upstream_cost"`
+	FreeUpstreamCost float64 `json:"free_upstream_cost"`
+	PaidUpstreamCost float64 `json:"paid_upstream_cost"`
+	Profit           float64 `json:"profit"`
+}
+
+type ProfitBreakdown struct {
+	Groups []ProfitBreakdownItem `json:"groups"`
+	Models []ProfitBreakdownItem `json:"models"`
 }
 
 // PlatformUsage 表示某用户/某 API key 在单个"有效平台"维度的用量明细。

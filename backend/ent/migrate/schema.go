@@ -632,6 +632,8 @@ var (
 		{Name: "primary_model", Type: field.TypeString, Size: 200},
 		{Name: "extra_models", Type: field.TypeJSON},
 		{Name: "group_name", Type: field.TypeString, Nullable: true, Size: 100, Default: ""},
+		{Name: "monitor_group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "monitor_sort_order", Type: field.TypeInt, Default: 0},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "interval_seconds", Type: field.TypeInt},
 		{Name: "jitter_seconds", Type: field.TypeInt, Default: 0},
@@ -650,7 +652,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "channel_monitors_channel_monitor_request_templates_request_template",
-				Columns:    []*schema.Column{ChannelMonitorsColumns[21]},
+				Columns:    []*schema.Column{ChannelMonitorsColumns[23]},
 				RefColumns: []*schema.Column{ChannelMonitorRequestTemplatesColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -659,7 +661,7 @@ var (
 			{
 				Name:    "channelmonitor_enabled_last_checked_at",
 				Unique:  false,
-				Columns: []*schema.Column{ChannelMonitorsColumns[13], ChannelMonitorsColumns[16]},
+				Columns: []*schema.Column{ChannelMonitorsColumns[15], ChannelMonitorsColumns[18]},
 			},
 			{
 				Name:    "channelmonitor_provider",
@@ -677,9 +679,14 @@ var (
 				Columns: []*schema.Column{ChannelMonitorsColumns[12]},
 			},
 			{
+				Name:    "channelmonitor_monitor_group_id_monitor_sort_order",
+				Unique:  false,
+				Columns: []*schema.Column{ChannelMonitorsColumns[13], ChannelMonitorsColumns[14]},
+			},
+			{
 				Name:    "channelmonitor_template_id",
 				Unique:  false,
-				Columns: []*schema.Column{ChannelMonitorsColumns[21]},
+				Columns: []*schema.Column{ChannelMonitorsColumns[23]},
 			},
 			{
 				Name:    "channelmonitor_account_id",
@@ -1457,6 +1464,7 @@ var (
 		{Name: "code", Type: field.TypeString, Unique: true, Size: 32},
 		{Name: "type", Type: field.TypeString, Size: 20, Default: "balance"},
 		{Name: "value", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "balance_source", Type: field.TypeString, Size: 10, Default: "free"},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "unused"},
 		{Name: "used_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
@@ -1474,13 +1482,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "redeem_codes_groups_redeem_codes",
-				Columns:    []*schema.Column{RedeemCodesColumns[10]},
+				Columns:    []*schema.Column{RedeemCodesColumns[11]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "redeem_codes_users_redeem_codes",
-				Columns:    []*schema.Column{RedeemCodesColumns[11]},
+				Columns:    []*schema.Column{RedeemCodesColumns[12]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -1489,22 +1497,22 @@ var (
 			{
 				Name:    "redeemcode_status",
 				Unique:  false,
-				Columns: []*schema.Column{RedeemCodesColumns[4]},
+				Columns: []*schema.Column{RedeemCodesColumns[5]},
 			},
 			{
 				Name:    "redeemcode_used_by",
 				Unique:  false,
-				Columns: []*schema.Column{RedeemCodesColumns[11]},
+				Columns: []*schema.Column{RedeemCodesColumns[12]},
 			},
 			{
 				Name:    "redeemcode_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{RedeemCodesColumns[10]},
+				Columns: []*schema.Column{RedeemCodesColumns[11]},
 			},
 			{
 				Name:    "redeemcode_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{RedeemCodesColumns[8]},
+				Columns: []*schema.Column{RedeemCodesColumns[9]},
 			},
 		},
 	}
@@ -1794,6 +1802,9 @@ var (
 		{Name: "password_hash", Type: field.TypeString, Size: 255},
 		{Name: "role", Type: field.TypeString, Size: 20, Default: "user"},
 		{Name: "balance", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "free_balance", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "paid_balance", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "free_balance_issued", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "frozen_balance", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "concurrency", Type: field.TypeInt, Default: 5},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
@@ -1822,7 +1833,7 @@ var (
 			{
 				Name:    "user_status",
 				Unique:  false,
-				Columns: []*schema.Column{UsersColumns[10]},
+				Columns: []*schema.Column{UsersColumns[13]},
 			},
 			{
 				Name:    "user_deleted_at",

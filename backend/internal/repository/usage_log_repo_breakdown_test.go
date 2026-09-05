@@ -100,3 +100,36 @@ func TestGetUserBreakdownStatsFiltersNativeCompactionV2(t *testing.T) {
 	require.Empty(t, rows)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestFillDashboardUsageStatsUsesCurrentAccountRate(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	today := start
+	now := start.Add(12 * time.Hour)
+
+	costExpression := regexp.QuoteMeta("COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(a.rate_multiplier, 1) AS account_cost")
+	accountJoin := regexp.QuoteMeta("LEFT JOIN accounts a ON a.id = ul.account_id")
+	mock.ExpectQuery("(?s)"+costExpression+".*"+accountJoin).
+		WithArgs(start, end, today, today.Add(24*time.Hour)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"total_requests", "total_input_tokens", "total_output_tokens",
+			"total_cache_creation_tokens", "total_cache_read_tokens",
+			"total_cost", "total_actual_cost", "total_account_cost", "total_duration_ms",
+			"today_requests", "today_input_tokens", "today_output_tokens",
+			"today_cache_creation_tokens", "today_cache_read_tokens",
+			"today_cost", "today_actual_cost", "today_account_cost",
+		}).AddRow(1, 10, 20, 0, 0, 1.0, 0.5, 0.25, 100, 1, 10, 20, 0, 0, 1.0, 0.5, 0.25))
+
+	hourStart := now.UTC().Truncate(time.Hour)
+	mock.ExpectQuery(`(?s)COUNT\(DISTINCT CASE.*FROM scoped`).
+		WithArgs(today, today.Add(24*time.Hour), hourStart, hourStart.Add(time.Hour)).
+		WillReturnRows(sqlmock.NewRows([]string{"active_users", "hourly_active_users"}).AddRow(1, 1))
+
+	stats := &usagestats.DashboardStats{}
+	require.NoError(t, repo.fillDashboardUsageStatsFromUsageLogs(context.Background(), stats, start, end, today, now, ""))
+	require.InDelta(t, 0.25, stats.TotalAccountCost, 1e-9)
+	require.InDelta(t, 0.25, stats.TodayAccountCost, 1e-9)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

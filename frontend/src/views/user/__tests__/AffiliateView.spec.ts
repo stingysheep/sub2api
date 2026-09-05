@@ -106,11 +106,29 @@ describe('AffiliateView', () => {
     await copyButtons[1].trigger('click')
     await flushPromises()
 
-    expect(copyToClipboard).toHaveBeenNthCalledWith(1, affiliateCode, 'affiliate.codeCopied')
     expect(copyToClipboard).toHaveBeenNthCalledWith(
-      2,
+      1,
       `${window.location.origin}/register?aff=${encodeURIComponent(affiliateCode)}`,
       'affiliate.linkCopied',
     )
+    expect(copyToClipboard).toHaveBeenNthCalledWith(2, affiliateCode, 'affiliate.codeCopied')
+  })
+
+  it('renders the animated artwork beside the promotion hero on desktop', async () => {
+    const wrapper = mount(AffiliateView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<main><slot /></main>' },
+          Icon: true,
+          AffiliateNetworkArt: { template: '<div data-testid="affiliate-network-art" />' },
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="affiliate-network-art"]').exists()).toBe(true)
+    expect(wrapper.html()).toContain('md:grid-cols-[minmax(0,1fr)_auto]')
   })
 })

@@ -577,6 +577,11 @@
     @apply hover:bg-primary-100 dark:hover:bg-primary-900/30;
   }
 
+  .sidebar-link-affiliate {
+    @apply bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300;
+    @apply hover:bg-emerald-100 hover:text-emerald-800 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-200;
+  }
+
   .sidebar-section {
     @apply mb-6;
   }

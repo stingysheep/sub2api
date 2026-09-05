@@ -70,6 +70,11 @@ func Value(v float64) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldEQ(FieldValue, v))
 }
 
+// BalanceSource applies equality check predicate on the "balance_source" field. It's identical to BalanceSourceEQ.
+func BalanceSource(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldEQ(FieldBalanceSource, v))
+}
+
 // Status applies equality check predicate on the "status" field. It's identical to StatusEQ.
 func Status(v string) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldEQ(FieldStatus, v))
@@ -278,6 +283,71 @@ func ValueLT(v float64) predicate.RedeemCode {
 // ValueLTE applies the LTE predicate on the "value" field.
 func ValueLTE(v float64) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldLTE(FieldValue, v))
+}
+
+// BalanceSourceEQ applies the EQ predicate on the "balance_source" field.
+func BalanceSourceEQ(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldEQ(FieldBalanceSource, v))
+}
+
+// BalanceSourceNEQ applies the NEQ predicate on the "balance_source" field.
+func BalanceSourceNEQ(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldNEQ(FieldBalanceSource, v))
+}
+
+// BalanceSourceIn applies the In predicate on the "balance_source" field.
+func BalanceSourceIn(vs ...string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldIn(FieldBalanceSource, vs...))
+}
+
+// BalanceSourceNotIn applies the NotIn predicate on the "balance_source" field.
+func BalanceSourceNotIn(vs ...string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldNotIn(FieldBalanceSource, vs...))
+}
+
+// BalanceSourceGT applies the GT predicate on the "balance_source" field.
+func BalanceSourceGT(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldGT(FieldBalanceSource, v))
+}
+
+// BalanceSourceGTE applies the GTE predicate on the "balance_source" field.
+func BalanceSourceGTE(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldGTE(FieldBalanceSource, v))
+}
+
+// BalanceSourceLT applies the LT predicate on the "balance_source" field.
+func BalanceSourceLT(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldLT(FieldBalanceSource, v))
+}
+
+// BalanceSourceLTE applies the LTE predicate on the "balance_source" field.
+func BalanceSourceLTE(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldLTE(FieldBalanceSource, v))
+}
+
+// BalanceSourceContains applies the Contains predicate on the "balance_source" field.
+func BalanceSourceContains(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldContains(FieldBalanceSource, v))
+}
+
+// BalanceSourceHasPrefix applies the HasPrefix predicate on the "balance_source" field.
+func BalanceSourceHasPrefix(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldHasPrefix(FieldBalanceSource, v))
+}
+
+// BalanceSourceHasSuffix applies the HasSuffix predicate on the "balance_source" field.
+func BalanceSourceHasSuffix(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldHasSuffix(FieldBalanceSource, v))
+}
+
+// BalanceSourceEqualFold applies the EqualFold predicate on the "balance_source" field.
+func BalanceSourceEqualFold(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldEqualFold(FieldBalanceSource, v))
+}
+
+// BalanceSourceContainsFold applies the ContainsFold predicate on the "balance_source" field.
+func BalanceSourceContainsFold(v string) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldContainsFold(FieldBalanceSource, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.

@@ -388,7 +388,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 							if stickyCacheMissReason == "" {
 								waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyAccountID)
-								if waitingCount < cfg.StickySessionMaxWaiting {
+								if waitingCount < cfg.StickySessionMaxWaiting && len(routingCandidates) == 1 {
 									// 会话数量限制检查（等待计划也需要占用会话配额）
 									if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
 										stickyCacheMissReason = "session_limit"
@@ -541,6 +541,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				// accounts 列表构建，账号一定在分组内。而 scheduler snapshot 缓存
 				// 反序列化后 AccountGroups 字段为空，导致 isAccountInGroup 永远返回 false。
 				platformOK := s.isAccountAllowedForPlatform(account, platform, useMixed)
+				recoveredStickyPreempted := s.shouldPreemptRecoveredStickyFromAccounts(ctx, platform, useMixed, requestedModel, account, accounts)
 				profitOK := s.isGatewayAccountProfitEligible(ctx, account)
 				modelSupported := requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)
 				channelOK := !isChannelRestricted(account)
@@ -565,7 +566,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					"rpm_ok", rpmOK,
 				)
 
-				if !clearSticky && platformOK && profitOK && modelSupported && channelOK && modelSchedulable && quotaOK && windowCostOK && rpmOK && schedulable {
+                if !clearSticky && !recoveredStickyPreempted && platformOK && profitOK && modelSupported && channelOK && modelSchedulable && quotaOK && windowCostOK && rpmOK && schedulable {
 					result, err := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
@@ -595,7 +596,10 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					}
 
 					waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
-					if waitingCount < cfg.StickySessionMaxWaiting {
+					// A busy sticky account must not monopolize a multi-account group.
+					// Probe the other group members first; retain the sticky wait plan
+					// only when it is the sole eligible account.
+					if waitingCount < cfg.StickySessionMaxWaiting && len(accounts) == 1 {
 						// 会话数量限制检查（等待计划也需要占用会话配额）
 						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
 							// 会话限制已满，继续到 Layer 2
@@ -791,6 +795,45 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		})
 	}
 	return nil, ErrNoAvailableAccounts
+}
+
+// shouldPreemptRecoveredStickyFromAccounts reports whether a recovered account
+// with a better priority can replace the current sticky account. The caller
+// supplies the already-filtered scheduling pool, so this check adds no account
+// list query to the request hot path.
+func (s *GatewayService) shouldPreemptRecoveredStickyFromAccounts(ctx context.Context, platform string, useMixed bool, requestedModel string, sticky *Account, accounts []Account) bool {
+	if s == nil || sticky == nil || s.recoveryCoordinator == nil {
+		return false
+	}
+	now := time.Now()
+	for i := range accounts {
+		candidate := &accounts[i]
+		if candidate.ID == sticky.ID || candidate.Priority >= sticky.Priority || !s.recoveryCoordinator.isRecovered(candidate.ID, now) {
+			continue
+		}
+		if !s.isAccountAllowedForPlatform(candidate, platform, useMixed) ||
+			(requestedModel != "" && !s.isModelSupportedByAccountWithContext(ctx, candidate, requestedModel)) ||
+			!s.isAccountSchedulableForSelection(candidate) ||
+			!s.isAccountSchedulableForModelSelection(ctx, candidate, requestedModel) ||
+			!s.isAccountSchedulableForQuota(candidate) ||
+			!s.isAccountSchedulableForWindowCost(ctx, candidate, false) ||
+			!s.isAccountSchedulableForRPM(ctx, candidate, false) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func (s *GatewayService) shouldPreemptRecoveredSticky(ctx context.Context, groupID *int64, platform string, useMixed bool, requestedModel string, sticky *Account) bool {
+	if s == nil || sticky == nil || s.recoveryCoordinator == nil {
+		return false
+	}
+	accounts, _, err := s.listSchedulableAccounts(ctx, groupID, platform, false)
+	if err != nil {
+		return false
+	}
+	return s.shouldPreemptRecoveredStickyFromAccounts(ctx, platform, useMixed, requestedModel, sticky, accounts)
 }
 
 func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates []*Account, groupID *int64, sessionHash string, preferOAuth bool) (*AccountSelectionResult, bool, error) {
@@ -2017,7 +2060,7 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 					if clearSticky {
 						_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
 					}
-					if !clearSticky && s.isGatewayAccountProfitEligible(ctx, account) && s.isAccountInGroup(account, groupID) && account.Platform == platform && (requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)) && s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) && s.isAccountSchedulableForQuota(account) && s.isAccountSchedulableForWindowCost(ctx, account, true) && s.isAccountSchedulableForRPM(ctx, account, true) {
+					if !clearSticky && !s.shouldPreemptRecoveredSticky(ctx, groupID, platform, false, requestedModel, account) && s.isGatewayAccountProfitEligible(ctx, account) && s.isAccountInGroup(account, groupID) && account.Platform == platform && (requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)) && s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) && s.isAccountSchedulableForQuota(account) && s.isAccountSchedulableForWindowCost(ctx, account, true) && s.isAccountSchedulableForRPM(ctx, account, true) {
 						return account, nil
 					}
 				}
@@ -2283,7 +2326,7 @@ func (s *GatewayService) selectAccountWithMixedScheduling(ctx context.Context, g
 					if clearSticky {
 						_ = s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
 					}
-					if !clearSticky && s.isGatewayAccountProfitEligible(ctx, account) && s.isAccountInGroup(account, groupID) && (requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)) && s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) && s.isAccountSchedulableForQuota(account) && s.isAccountSchedulableForWindowCost(ctx, account, true) && s.isAccountSchedulableForRPM(ctx, account, true) && !s.isStickyAccountUpstreamRestricted(ctx, groupID, account, requestedModel) {
+					if !clearSticky && !s.shouldPreemptRecoveredSticky(ctx, groupID, nativePlatform, true, requestedModel, account) && s.isGatewayAccountProfitEligible(ctx, account) && s.isAccountInGroup(account, groupID) && (requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)) && s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) && s.isAccountSchedulableForQuota(account) && s.isAccountSchedulableForWindowCost(ctx, account, true) && s.isAccountSchedulableForRPM(ctx, account, true) && !s.isStickyAccountUpstreamRestricted(ctx, groupID, account, requestedModel) {
 						if account.Platform == nativePlatform || (account.Platform == PlatformAntigravity && account.IsMixedSchedulingEnabled()) {
 							return account, nil
 						}

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 )
@@ -162,6 +161,50 @@ VALUES ($1, 'accrue', $2, $3, $4, NOW(), NOW())`, inviterID, amount, inviteeUser
 	return applied, nil
 }
 
+func (r *affiliateRepository) AccrueUsageQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, requestID string) (bool, error) {
+	if amount <= 0 || strings.TrimSpace(requestID) == "" {
+		return false, nil
+	}
+	var applied bool
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		column := "aff_quota"
+		if freezeHours > 0 {
+			column = "aff_frozen_quota"
+		}
+		res, err := txClient.ExecContext(txCtx, fmt.Sprintf("UPDATE user_affiliates SET %s = %s + $1, aff_history_quota = aff_history_quota + $1, updated_at = NOW() WHERE user_id = $2", column, column), amount, inviterID)
+		if err != nil {
+			return err
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return nil
+		}
+		rows, err := txClient.QueryContext(txCtx, `
+			INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_usage_request_id, frozen_until, created_at, updated_at)
+			VALUES ($1, 'accrue', $2, $3, $4, CASE WHEN $5 > 0 THEN NOW() + make_interval(hours => $5) ELSE NULL END, NOW(), NOW())
+			ON CONFLICT (source_usage_request_id) DO NOTHING
+			RETURNING id`, inviterID, amount, inviteeUserID, requestID, freezeHours)
+		if err != nil {
+			return err
+		}
+		var ledgerID int64
+		if rows.Next() {
+			err = rows.Scan(&ledgerID)
+		}
+		_ = rows.Close()
+		if err == nil && ledgerID == 0 {
+			_, err = txClient.ExecContext(txCtx, fmt.Sprintf("UPDATE user_affiliates SET %s = GREATEST(%s - $1, 0), aff_history_quota = GREATEST(aff_history_quota - $1, 0), updated_at = NOW() WHERE user_id = $2", column, column), amount, inviterID)
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		applied = ledgerID > 0
+		return nil
+	})
+	return applied, err
+}
+
 func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error) {
 	client := clientFromContext(ctx, r.client)
 	rows, err := client.QueryContext(ctx,
@@ -286,15 +329,17 @@ FROM cleared`, userID)
 			return service.ErrAffiliateQuotaEmpty
 		}
 
-		affected, err := txClient.User.Update().
-			Where(user.IDEQ(userID)).
-			AddBalance(transferred).
-			AddTotalRecharged(transferred).
-			Save(txCtx)
+		result, err := txClient.ExecContext(txCtx, `
+			UPDATE users
+			SET balance = balance + $1,
+			    free_balance = COALESCE(free_balance, 0) + $1,
+			    free_balance_issued = COALESCE(free_balance_issued, 0) + $1,
+			    updated_at = NOW()
+			WHERE id = $2 AND deleted_at IS NULL`, transferred, userID)
 		if err != nil {
 			return fmt.Errorf("credit user balance by affiliate quota: %w", err)
 		}
-		if affected == 0 {
+		if affected, _ := result.RowsAffected(); affected == 0 {
 			return service.ErrUserNotFound
 		}
 
@@ -381,6 +426,46 @@ LIMIT $2`, inviterID, limit)
 		return nil, err
 	}
 	return invitees, nil
+}
+
+func (r *affiliateRepository) ListLeaderboard(ctx context.Context, limit int) ([]service.AffiliateLeaderboardEntry, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 15
+	}
+	rows, err := r.client.QueryContext(ctx, `
+		SELECT ROW_NUMBER() OVER (ORDER BY ua.aff_history_quota DESC, ua.user_id),
+		       COALESCE(u.email, ''), ua.aff_count, ua.aff_history_quota::double precision
+		FROM user_affiliates ua JOIN users u ON u.id = ua.user_id
+		WHERE u.deleted_at IS NULL
+		ORDER BY ua.aff_history_quota DESC, ua.user_id
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	result := make([]service.AffiliateLeaderboardEntry, 0, limit)
+	for rows.Next() {
+		var item service.AffiliateLeaderboardEntry
+		if err := rows.Scan(&item.Rank, &item.Email, &item.InvitedCount, &item.HistoryRebate); err != nil {
+			return nil, err
+		}
+		item.Email = maskAffiliateEmail(item.Email)
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func maskAffiliateEmail(email string) string {
+	email = strings.TrimSpace(email)
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return email
+	}
+	local := parts[0]
+	if len(local) <= 2 {
+		return local[:1] + "***@" + parts[1]
+	}
+	return local[:2] + "***@" + parts[1]
 }
 
 func (r *affiliateRepository) ListAffiliateInviteRecords(ctx context.Context, filter service.AffiliateRecordFilter) ([]service.AffiliateInviteRecord, int64, error) {

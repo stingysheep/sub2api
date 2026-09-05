@@ -148,8 +148,6 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 	}
 	out := &AdminGroup{
 		Group:                       groupFromServiceBase(g),
-		ForceOpenAIFast:             g.ForceOpenAIFast,
-		FreeOpenAIFast:              g.FreeOpenAIFast,
 		ProfitControlEnabled:        g.ProfitControlEnabled,
 		ProfitMinMargin:             g.ProfitMinMargin,
 		ProfitSafetyBuffer:          g.ProfitSafetyBuffer,
@@ -224,7 +222,6 @@ func groupFromServiceBase(g *service.Group) Group {
 		RequirePrivacySet:               g.RequirePrivacySet,
 		RPMLimit:                        g.RPMLimit,
 		MaxReasoningEffort:              g.MaxReasoningEffort,
-		MaxReasoningEffortOverLimit:     g.MaxReasoningEffortOverLimit,
 		ReasoningEffortMappings:         g.ReasoningEffortMappings,
 		CreatedAt:                       g.CreatedAt,
 		UpdatedAt:                       g.UpdatedAt,
@@ -635,19 +632,20 @@ func RedeemCodeFromServiceAdmin(rc *service.RedeemCode) *AdminRedeemCode {
 
 func redeemCodeFromServiceBase(rc *service.RedeemCode) RedeemCode {
 	out := RedeemCode{
-		ID:           rc.ID,
-		Code:         rc.Code,
-		Type:         rc.Type,
-		Value:        rc.Value,
-		Status:       rc.Status,
-		UsedBy:       rc.UsedBy,
-		UsedAt:       rc.UsedAt,
-		CreatedAt:    rc.CreatedAt,
-		ExpiresAt:    rc.ExpiresAt,
-		GroupID:      rc.GroupID,
-		ValidityDays: rc.ValidityDays,
-		User:         UserFromServiceShallow(rc.User),
-		Group:        GroupFromServiceShallow(rc.Group),
+		ID:            rc.ID,
+		Code:          rc.Code,
+		Type:          rc.Type,
+		Value:         rc.Value,
+		BalanceSource: string(service.NormalizeBalanceSource(rc.BalanceSource)),
+		Status:        rc.Status,
+		UsedBy:        rc.UsedBy,
+		UsedAt:        rc.UsedAt,
+		CreatedAt:     rc.CreatedAt,
+		ExpiresAt:     rc.ExpiresAt,
+		GroupID:       rc.GroupID,
+		ValidityDays:  rc.ValidityDays,
+		User:          UserFromServiceShallow(rc.User),
+		Group:         GroupFromServiceShallow(rc.Group),
 	}
 	if rc.IsExpired() {
 		out.Status = service.StatusExpired

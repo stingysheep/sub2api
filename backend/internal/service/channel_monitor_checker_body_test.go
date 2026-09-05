@@ -193,6 +193,49 @@ func TestRunCheckForModel_OpenAI_DefaultChatRequest(t *testing.T) {
 	if h.lastHeaders.Get("Authorization") != "Bearer sk-openai" {
 		t.Errorf("expected bearer auth header, got %q", h.lastHeaders.Get("Authorization"))
 	}
+	if h.lastHeaders.Get(ChannelMonitorProbeHeader) != "1" {
+		t.Errorf("expected monitor probe marker header, got %q", h.lastHeaders.Get(ChannelMonitorProbeHeader))
+	}
+}
+
+func TestFinalizeOperationalOrDegraded_Uses15SecondThreshold(t *testing.T) {
+	tests := []struct {
+		name       string
+		latency    time.Duration
+		latencyMs  int
+		wantStatus string
+	}{
+		{name: "below threshold", latency: 15*time.Second - time.Millisecond, latencyMs: 14999, wantStatus: MonitorStatusOperational},
+		{name: "at threshold", latency: 15 * time.Second, latencyMs: 15000, wantStatus: MonitorStatusDegraded},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := finalizeOperationalOrDegradedWithThreshold(&CheckResult{}, tt.latency, tt.latencyMs, monitorDegradedThreshold)
+			if res.Status != tt.wantStatus {
+				t.Fatalf("latency %s: expected status %s, got %s", tt.latency, tt.wantStatus, res.Status)
+			}
+		})
+	}
+}
+
+func TestFinalizeOperationalOrDegraded_UsesConfiguredThreshold(t *testing.T) {
+	threshold := 20 * time.Second
+	for _, tt := range []struct {
+		name       string
+		latency    time.Duration
+		wantStatus string
+	}{
+		{name: "below configured threshold", latency: threshold - time.Millisecond, wantStatus: MonitorStatusOperational},
+		{name: "at configured threshold", latency: threshold, wantStatus: MonitorStatusDegraded},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			res := finalizeOperationalOrDegradedWithThreshold(&CheckResult{}, tt.latency, int(tt.latency/time.Millisecond), threshold)
+			if res.Status != tt.wantStatus {
+				t.Fatalf("latency %s with threshold %s: expected status %s, got %s", tt.latency, threshold, tt.wantStatus, res.Status)
+			}
+		})
+	}
 }
 
 func TestGrokMonitorConfiguration(t *testing.T) {

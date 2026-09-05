@@ -25,7 +25,13 @@ export interface UserMonitorView {
   id: number
   name: string
   provider: Provider
+  /** Legacy business aggregation label; not the admin monitor group. */
   group_name: string
+  /** Shared admin-configured monitor organization. */
+  monitor_group_id: number | null
+  monitor_group_name: string | null
+  monitor_group_sort_order: number
+  monitor_sort_order: number
   primary_model: string
   primary_status: MonitorStatus
   primary_latency_ms: number | null

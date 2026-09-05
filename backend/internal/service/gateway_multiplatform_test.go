@@ -2620,6 +2620,44 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.Equal(t, 0, concurrencyCache.loadBatchCalls)
 	})
 
+	t.Run("粘性账号槽位满-多账号组内切换", func(t *testing.T) {
+		repo := &mockAccountRepoForPlatform{
+			accounts: []Account{
+				{ID: 1, Platform: PlatformAnthropic, Priority: 1, Status: StatusActive, Schedulable: true, Concurrency: 5},
+				{ID: 2, Platform: PlatformAnthropic, Priority: 2, Status: StatusActive, Schedulable: true, Concurrency: 5},
+			},
+			accountsByID: map[int64]*Account{},
+		}
+		for i := range repo.accounts {
+			repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+		}
+
+		cache := &mockGatewayCacheForPlatform{
+			sessionBindings: map[string]int64{"sticky-multi": 1},
+		}
+		cfg := testConfig()
+		cfg.Gateway.Scheduling.LoadBatchEnabled = true
+		cfg.Gateway.Scheduling.StickySessionMaxWaiting = 1
+		concurrencyCache := &mockConcurrencyCache{
+			acquireResults: map[int64]bool{1: false, 2: true},
+			waitCounts:     map[int64]int{1: 0},
+		}
+
+		svc := &GatewayService{
+			accountRepo:        repo,
+			cache:              cache,
+			cfg:                cfg,
+			concurrencyService: NewConcurrencyService(concurrencyCache),
+		}
+
+		result, err := svc.SelectAccountWithLoadAwareness(ctx, nil, "sticky-multi", "claude-3-5-sonnet-20241022", nil, "", int64(0))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.True(t, result.Acquired)
+		require.Nil(t, result.WaitPlan)
+		require.Equal(t, int64(2), result.Account.ID)
+	})
+
 	t.Run("负载批量查询失败-降级旧顺序选择", func(t *testing.T) {
 		repo := &mockAccountRepoForPlatform{
 			accounts: []Account{
@@ -2656,7 +2694,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.Equal(t, int64(2), cache.sessionBindings["legacy"])
 	})
 
-	t.Run("模型路由-粘性账号等待计划", func(t *testing.T) {
+	t.Run("模型路由-粘性账号繁忙时切换到组内账号", func(t *testing.T) {
 		groupID := int64(20)
 		sessionHash := "route-sticky"
 
@@ -2710,8 +2748,8 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		result, err := svc.SelectAccountWithLoadAwareness(ctx, &groupID, sessionHash, "claude-3-5-sonnet-20241022", nil, "", int64(0))
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.NotNil(t, result.WaitPlan)
-		require.Equal(t, int64(1), result.Account.ID)
+		require.Nil(t, result.WaitPlan)
+		require.Equal(t, int64(2), result.Account.ID)
 	})
 
 	t.Run("模型路由-粘性账号命中", func(t *testing.T) {

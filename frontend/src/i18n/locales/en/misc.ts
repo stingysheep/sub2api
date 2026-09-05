@@ -23,6 +23,7 @@ export default {
     latestVersion: 'Latest Version',
     upToDate: "You're running the latest version.",
     updateAvailable: 'A new version is available!',
+    updateBadge: 'Update',
     releaseNotes: 'Release Notes',
     noReleaseNotes: 'No release notes',
     viewUpdate: 'View Update',

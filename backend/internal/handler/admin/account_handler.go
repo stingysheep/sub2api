@@ -830,6 +830,75 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
+// AddToGroup adds one account/group edge with the default group priority.
+// POST /api/v1/admin/accounts/:id/groups/:group_id
+func (h *AccountHandler) AddToGroup(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid group ID")
+		return
+	}
+	if err := h.adminService.AddAccountToGroup(c.Request.Context(), accountID, groupID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"account_id": accountID, "group_id": groupID, "priority": 1})
+}
+
+type UpdateAccountGroupPriorityRequest struct {
+	Priority int `json:"priority" binding:"required,min=1"`
+}
+
+// UpdateGroupPriority updates only one account/group edge.
+// PUT /api/v1/admin/accounts/:id/groups/:group_id/priority
+func (h *AccountHandler) UpdateGroupPriority(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid group ID")
+		return
+	}
+	var req UpdateAccountGroupPriorityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.adminService.UpdateAccountGroupPriority(c.Request.Context(), accountID, groupID, req.Priority); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"account_id": accountID, "group_id": groupID, "priority": req.Priority})
+}
+
+// RemoveFromGroup removes only one account/group edge.
+// DELETE /api/v1/admin/accounts/:id/groups/:group_id
+func (h *AccountHandler) RemoveFromGroup(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid group ID")
+		return
+	}
+	if err := h.adminService.RemoveAccountFromGroup(c.Request.Context(), accountID, groupID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"account_id": accountID, "group_id": groupID})
+}
+
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.
 // POST /api/v1/admin/accounts/check-mixed-channel
 func (h *AccountHandler) CheckMixedChannel(c *gin.Context) {
@@ -1135,6 +1204,12 @@ type TestAccountRequest struct {
 	AudioDataURL string `json:"audio_data_url"`
 }
 
+const maxBatchAccountTests = 50
+
+type BatchTestAccountsRequest struct {
+	AccountIDs []int64 `json:"account_ids" binding:"required,min=1,max=50"`
+}
+
 type SyncFromCRSRequest struct {
 	BaseURL            string   `json:"base_url" binding:"required"`
 	Username           string   `json:"username" binding:"required"`
@@ -1178,6 +1253,115 @@ func (h *AccountHandler) Test(c *gin.Context) {
 			_ = c.Error(err)
 		}
 	}
+}
+
+// BatchTest runs bounded, sequential connection tests for selected accounts.
+// The model comes from each account's configured model mapping when present;
+// the test service supplies the platform default otherwise.
+// POST /api/v1/admin/accounts/batch-test
+func (h *AccountHandler) BatchTest(c *gin.Context) {
+	var req BatchTestAccountsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req.AccountIDs) == 0 || len(req.AccountIDs) > maxBatchAccountTests {
+		response.BadRequest(c, fmt.Sprintf("account_ids must contain between 1 and %d accounts", maxBatchAccountTests))
+		return
+	}
+	if h.accountTestService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account test service unavailable")
+		return
+	}
+
+	type batchTestResult struct {
+		AccountID int64                        `json:"account_id"`
+		ModelID   string                       `json:"model_id,omitempty"`
+		Result    *service.ScheduledTestResult `json:"result,omitempty"`
+		Error     string                       `json:"error,omitempty"`
+	}
+	results := make([]batchTestResult, 0, len(req.AccountIDs))
+	for _, accountID := range req.AccountIDs {
+		account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+		if err != nil {
+			results = append(results, batchTestResult{AccountID: accountID, Error: "Account not found"})
+			continue
+		}
+		modelID := ""
+		configuredModels := explicitAccountModelMapping(account)
+		if len(configuredModels) > 0 {
+			modelID = configuredModels[0]
+		}
+		testCtx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
+		result, testErr := h.accountTestService.RunTestBackground(testCtx, accountID, modelID)
+		cancel()
+		item := batchTestResult{AccountID: accountID, ModelID: modelID, Result: result}
+		if testErr != nil {
+			item.Error = testErr.Error()
+		}
+		results = append(results, item)
+	}
+	response.Success(c, gin.H{"results": results})
+}
+
+// BatchSyncUpstreamModels replaces each selected account's model mapping with
+// the live model list from its upstream. Accounts are processed sequentially
+// to keep upstream and database load bounded.
+// POST /api/v1/admin/accounts/batch-sync-upstream-models
+func (h *AccountHandler) BatchSyncUpstreamModels(c *gin.Context) {
+	var req BatchTestAccountsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req.AccountIDs) == 0 || len(req.AccountIDs) > maxBatchAccountTests {
+		response.BadRequest(c, fmt.Sprintf("account_ids must contain between 1 and %d accounts", maxBatchAccountTests))
+		return
+	}
+	if h.accountTestService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account test service unavailable")
+		return
+	}
+
+	accounts, err := h.adminService.GetAccountsByIDs(c.Request.Context(), req.AccountIDs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	accountsByID := make(map[int64]*service.Account, len(accounts))
+	for _, account := range accounts {
+		if account != nil {
+			accountsByID[account.ID] = account
+		}
+	}
+
+	type batchSyncResult struct {
+		AccountID int64    `json:"account_id"`
+		Success   bool     `json:"success"`
+		Models    []string `json:"models"`
+		Error     string   `json:"error,omitempty"`
+	}
+	results := make([]batchSyncResult, 0, len(req.AccountIDs))
+	for _, accountID := range req.AccountIDs {
+		account := accountsByID[accountID]
+		if account == nil {
+			results = append(results, batchSyncResult{AccountID: accountID, Models: []string{}, Error: "Account not found"})
+			continue
+		}
+
+		catalog, syncErr := h.accountTestService.SyncUpstreamModelMapping(c.Request.Context(), account)
+		if syncErr != nil {
+			results = append(results, batchSyncResult{
+				AccountID: accountID,
+				Models:    []string{},
+				Error:     upstreamModelSyncClientMessage(syncErr),
+			})
+			continue
+		}
+		results = append(results, batchSyncResult{AccountID: accountID, Success: true, Models: catalog.Models})
+	}
+
+	response.Success(c, gin.H{"results": results})
 }
 
 // RecoverState handles unified recovery of recoverable account runtime state.
@@ -2654,6 +2838,8 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	configuredModels := explicitAccountModelMapping(account)
+
 	// Handle OpenAI accounts
 	if account.IsOpenAI() {
 		// OpenAI 自动透传会绕过常规模型改写，测试/模型列表也应回落到默认模型集。
@@ -2661,7 +2847,28 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 			response.Success(c, openai.DefaultModels)
 			return
 		}
-
+		if hasExplicitEmptyAccountModelMapping(account) {
+			response.Success(c, []openai.Model{})
+			return
+		}
+		if len(configuredModels) > 0 {
+			var models []openai.Model
+			for _, requestedModel := range configuredModels {
+				var found bool
+				for _, dm := range openai.DefaultModels {
+					if dm.ID == requestedModel {
+						models = append(models, dm)
+						found = true
+						break
+					}
+				}
+				if !found {
+					models = append(models, openai.Model{ID: requestedModel, Object: "model", Type: "model", DisplayName: requestedModel})
+				}
+			}
+			response.Success(c, models)
+			return
+		}
 		mapping := account.GetModelMapping()
 		if len(mapping) == 0 {
 			response.Success(c, openai.DefaultModels)
@@ -2698,11 +2905,55 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		// Assist channel. Do not advertise newer 3.x or image models that the
 		// channel cannot serve.
 		if account.IsOAuth() {
+			if hasExplicitEmptyAccountModelMapping(account) {
+				response.Success(c, []geminicli.Model{})
+				return
+			}
+			if len(configuredModels) > 0 {
+				models := make([]geminicli.Model, 0, len(configuredModels))
+				for _, requestedModel := range configuredModels {
+					var found bool
+					for _, dm := range geminicli.DefaultModels {
+						if dm.ID == requestedModel {
+							models = append(models, dm)
+							found = true
+							break
+						}
+					}
+					if !found {
+						models = append(models, geminicli.Model{ID: requestedModel, Type: "model", DisplayName: requestedModel})
+					}
+				}
+				response.Success(c, models)
+				return
+			}
 			if account.IsGeminiGoogleOne() {
 				response.Success(c, geminicli.GoogleOneModels)
 				return
 			}
 			response.Success(c, geminicli.DefaultModels)
+			return
+		}
+		if len(configuredModels) > 0 {
+			var models []geminicli.Model
+			for _, requestedModel := range configuredModels {
+				var found bool
+				for _, dm := range geminicli.DefaultModels {
+					if dm.ID == requestedModel {
+						models = append(models, dm)
+						found = true
+						break
+					}
+				}
+				if !found {
+					models = append(models, geminicli.Model{ID: requestedModel, Type: "model", DisplayName: requestedModel})
+				}
+			}
+			response.Success(c, models)
+			return
+		}
+		if hasExplicitEmptyAccountModelMapping(account) {
+			response.Success(c, []geminicli.Model{})
 			return
 		}
 
@@ -2738,6 +2989,18 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 
 	// Handle Antigravity accounts: return Claude + Gemini models
 	if account.Platform == service.PlatformAntigravity {
+		if hasExplicitEmptyAccountModelMapping(account) {
+			response.Success(c, []antigravity.ClaudeModel{})
+			return
+		}
+		if len(configuredModels) > 0 {
+			models := make([]antigravity.ClaudeModel, 0, len(configuredModels))
+			for _, requestedModel := range configuredModels {
+				models = append(models, antigravity.ClaudeModel{ID: requestedModel, Type: "model", DisplayName: requestedModel})
+			}
+			response.Success(c, models)
+			return
+		}
 		// 直接复用 antigravity.DefaultModels()，与 /v1/models 端点保持同步
 		response.Success(c, antigravity.DefaultModels())
 		return
@@ -2745,6 +3008,26 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 
 	// Handle Grok accounts
 	if account.Platform == service.PlatformGrok {
+		if hasExplicitEmptyAccountModelMapping(account) {
+			response.Success(c, []xai.Model{})
+			return
+		}
+		if len(configuredModels) > 0 {
+			var models []xai.Model
+			defaultByID := make(map[string]xai.Model)
+			for _, model := range xai.DefaultModels() {
+				defaultByID[model.ID] = model
+			}
+			for _, requestedModel := range configuredModels {
+				if model, found := defaultByID[requestedModel]; found {
+					models = append(models, model)
+				} else {
+					models = append(models, xai.Model{ID: requestedModel, Object: "model", OwnedBy: "xai", DisplayName: requestedModel})
+				}
+			}
+			response.Success(c, models)
+			return
+		}
 		defaultModels := xai.DefaultModels()
 
 		hasExplicitMapping := false
@@ -2796,11 +3079,55 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	// Handle Claude/Anthropic accounts
 	// For OAuth and Setup-Token accounts: return default models
 	if account.IsOAuth() {
+		if hasExplicitEmptyAccountModelMapping(account) {
+			response.Success(c, []claude.Model{})
+			return
+		}
+		if len(configuredModels) > 0 {
+			models := make([]claude.Model, 0, len(configuredModels))
+			for _, requestedModel := range configuredModels {
+				var found bool
+				for _, dm := range claude.DefaultModels {
+					if dm.ID == requestedModel {
+						models = append(models, dm)
+						found = true
+						break
+					}
+				}
+				if !found {
+					models = append(models, claude.Model{ID: requestedModel, Type: "model", DisplayName: requestedModel})
+				}
+			}
+			response.Success(c, models)
+			return
+		}
 		response.Success(c, claude.DefaultModels)
 		return
 	}
 
 	// For API Key accounts: return models based on model_mapping
+	if len(configuredModels) > 0 {
+		var models []claude.Model
+		for _, requestedModel := range configuredModels {
+			var found bool
+			for _, dm := range claude.DefaultModels {
+				if dm.ID == requestedModel {
+					models = append(models, dm)
+					found = true
+					break
+				}
+			}
+			if !found {
+				models = append(models, claude.Model{ID: requestedModel, Type: "model", DisplayName: requestedModel})
+			}
+		}
+		response.Success(c, models)
+		return
+	}
+	if hasExplicitEmptyAccountModelMapping(account) {
+		response.Success(c, []claude.Model{})
+		return
+	}
 	mapping := account.GetModelMapping()
 	if len(mapping) == 0 {
 		// No mapping configured, return default models
@@ -2834,6 +3161,56 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	response.Success(c, models)
 }
 
+// explicitAccountModelMapping returns the concrete public model IDs entered
+// in the account editor. It intentionally does not call
+// GetModelMapping because that method may synthesize platform defaults for
+// accounts without an explicit restriction.
+func explicitAccountModelMapping(account *service.Account) []string {
+	if account == nil || account.Credentials == nil {
+		return nil
+	}
+	ids := make([]string, 0)
+	switch raw := account.Credentials["model_mapping"].(type) {
+	case map[string]any:
+		for modelID := range raw {
+			modelID = strings.TrimSpace(modelID)
+			if modelID != "" && !strings.Contains(modelID, "*") {
+				ids = append(ids, modelID)
+			}
+		}
+	case map[string]string:
+		for modelID := range raw {
+			if modelID != "" && !strings.Contains(modelID, "*") {
+				ids = append(ids, modelID)
+			}
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func hasExplicitEmptyAccountModelMapping(account *service.Account) bool {
+	if account == nil || account.Credentials == nil {
+		return false
+	}
+	switch raw := account.Credentials["model_mapping"].(type) {
+	case map[string]any:
+		return len(raw) == 0
+	case map[string]string:
+		return len(raw) == 0
+	default:
+		return false
+	}
+}
+
+func upstreamModelSyncClientMessage(err error) string {
+	var syncErr *service.UpstreamModelSyncError
+	if errors.As(err, &syncErr) {
+		return syncErr.SafeMessage()
+	}
+	return "Failed to sync upstream models from upstream"
+}
+
 // SyncUpstreamModels handles syncing live supported models from an account's upstream.
 // POST /api/v1/admin/accounts/:id/models/sync-upstream
 func (h *AccountHandler) SyncUpstreamModels(c *gin.Context) {
@@ -2854,7 +3231,7 @@ func (h *AccountHandler) SyncUpstreamModels(c *gin.Context) {
 		return
 	}
 
-	catalog, err := h.accountTestService.SyncUpstreamModelCatalog(c.Request.Context(), account)
+	catalog, err := h.accountTestService.SyncUpstreamModelMapping(c.Request.Context(), account)
 	if err != nil {
 		var syncErr *service.UpstreamModelSyncError
 		if errors.As(err, &syncErr) {

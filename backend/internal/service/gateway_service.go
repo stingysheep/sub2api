@@ -215,6 +215,39 @@ func anthropicStreamEventIsTerminal(eventName, data string) bool {
 	return gjson.Get(trimmed, "type").String() == "message_stop"
 }
 
+// anthropicStreamDataStartsSemanticOutput reports whether an Anthropic SSE
+// event contains the first meaningful model output. Metadata events such as
+// message_start arrive before the model emits text and must not be used as
+// TTFT samples for account scheduling.
+func anthropicStreamDataStartsSemanticOutput(data string) bool {
+	trimmed := strings.TrimSpace(data)
+	if trimmed == "" || trimmed == "[DONE]" {
+		return false
+	}
+	eventType := gjson.Get(trimmed, "type").String()
+	switch eventType {
+	case "content_block_delta":
+		deltaType := gjson.Get(trimmed, "delta.type").String()
+		switch deltaType {
+		case "text_delta":
+			return gjson.Get(trimmed, "delta.text").String() != ""
+		case "thinking_delta":
+			return gjson.Get(trimmed, "delta.thinking").String() != ""
+		case "input_json_delta":
+			return gjson.Get(trimmed, "delta.partial_json").String() != ""
+		default:
+			return false
+		}
+	case "content_block_start":
+		// A tool-use block is itself meaningful output even before its first
+		// input_json_delta; a text block is only metadata until it gets a delta.
+		blockType := gjson.Get(trimmed, "content_block.type").String()
+		return blockType != "" && blockType != "text"
+	default:
+		return false
+	}
+}
+
 func cloneStringSlice(src []string) []string {
 	if len(src) == 0 {
 		return nil
@@ -749,12 +782,26 @@ func (s *GatewayService) TempUnscheduleRetryableError(ctx context.Context, accou
 	if failoverErr.RequestScopedTransient {
 		return
 	}
+	s.scheduleAccountRecoveryCheck(accountID)
 	// 根据状态码选择封禁策略
 	switch failoverErr.StatusCode {
 	case http.StatusBadRequest:
 		tempUnscheduleGoogleConfigError(ctx, s.accountRepo, accountID, "[handler]")
 	case http.StatusBadGateway:
 		tempUnscheduleEmptyResponse(ctx, s.accountRepo, accountID, "[handler]")
+	}
+}
+
+// ScheduleAccountRecoveryCheck starts a deduplicated, non-billable observer
+// for an account-scoped failover error. It is optional so existing failover
+// test doubles remain source-compatible.
+func (s *GatewayService) ScheduleAccountRecoveryCheck(_ context.Context, accountID int64) {
+	s.scheduleAccountRecoveryCheck(accountID)
+}
+
+func (s *GatewayService) scheduleAccountRecoveryCheck(accountID int64) {
+	if s != nil && s.recoveryCoordinator != nil {
+		s.recoveryCoordinator.schedule(accountID)
 	}
 }
 
@@ -797,6 +844,14 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	recoveryCoordinator   *accountRecoveryCoordinator
+	affiliateService      *AffiliateService
+}
+
+func (s *GatewayService) SetAffiliateService(affiliateService *AffiliateService) {
+	if s != nil {
+		s.affiliateService = affiliateService
+	}
 }
 
 // NewGatewayService creates a new GatewayService
@@ -866,6 +921,14 @@ func NewGatewayService(
 		compositeResolver:     compositeResolver,
 		balanceNotifyService:  balanceNotifyService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		recoveryCoordinator:   newAccountRecoveryCoordinator(accountRepo),
+	}
+	if svc.recoveryCoordinator != nil && schedulerSnapshot != nil {
+		svc.recoveryCoordinator.setOnRecovered(func(ctx context.Context, accountID int64) {
+			if err := schedulerSnapshot.RefreshRecoveredAccount(ctx, accountID); err != nil {
+				slog.Warn("account_recovery_snapshot_refresh_failed", "account_id", accountID, "error", err)
+			}
+		})
 	}
 	if compositeResolver != nil {
 		compositeResolver.SetModelOwnershipResolver(svc.resolveCompositeModelOwnership)

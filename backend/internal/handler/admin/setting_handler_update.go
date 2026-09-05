@@ -156,6 +156,7 @@ type UpdateSettingsRequest struct {
 	SiteName                    string                `json:"site_name"`
 	SiteLogo                    string                `json:"site_logo"`
 	SiteSubtitle                string                `json:"site_subtitle"`
+	DashboardNotice             string                `json:"dashboard_notice"`
 	APIBaseURL                  string                `json:"api_base_url"`
 	ContactInfo                 string                `json:"contact_info"`
 	DocURL                      string                `json:"doc_url"`
@@ -173,6 +174,7 @@ type UpdateSettingsRequest struct {
 	DefaultConcurrency                        int                               `json:"default_concurrency"`
 	DefaultBalance                            float64                           `json:"default_balance"`
 	AffiliateRebateRate                       *float64                          `json:"affiliate_rebate_rate"`
+	AffiliateDisplayRebateRate                *float64                          `json:"affiliate_display_rebate_rate"`
 	AffiliateRebateFreezeHours                *int                              `json:"affiliate_rebate_freeze_hours"`
 	AffiliateRebateDurationDays               *int                              `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap              *float64                          `json:"affiliate_rebate_per_invitee_cap"`
@@ -329,11 +331,12 @@ type UpdateSettingsRequest struct {
 	PaymentAlipayMobilePrecreateDeepLink *bool `json:"payment_alipay_mobile_precreate_deep_link"`
 
 	// Channel Monitor feature switch
-	ChannelMonitorEnabled                *bool   `json:"channel_monitor_enabled"`
-	ChannelMonitorMode                   *string `json:"channel_monitor_mode"`
-	ChannelMonitorDefaultIntervalSeconds *int    `json:"channel_monitor_default_interval_seconds"`
-	ChannelMonitorHideThroughput         *bool   `json:"channel_monitor_hide_throughput"`
-	ChannelMonitorShowQuota              *bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorEnabled                  *bool   `json:"channel_monitor_enabled"`
+	ChannelMonitorMode                     *string `json:"channel_monitor_mode"`
+	ChannelMonitorDefaultIntervalSeconds   *int    `json:"channel_monitor_default_interval_seconds"`
+	ChannelMonitorDegradedThresholdSeconds *int    `json:"channel_monitor_degraded_threshold_seconds"`
+	ChannelMonitorHideThroughput           *bool   `json:"channel_monitor_hide_throughput"`
+	ChannelMonitorShowQuota                *bool   `json:"channel_monitor_show_quota"`
 
 	// Grok model mapping policy
 	GrokDefaultTextModel           *string `json:"grok_default_text_model"`
@@ -567,6 +570,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 	if affiliateRebateRate > service.AffiliateRebateRateMax {
 		affiliateRebateRate = service.AffiliateRebateRateMax
+	}
+	affiliateDisplayRebateRate := previousSettings.AffiliateDisplayRebateRate
+	if req.AffiliateDisplayRebateRate != nil {
+		affiliateDisplayRebateRate = *req.AffiliateDisplayRebateRate
+	}
+	if affiliateDisplayRebateRate < service.AffiliateRebateRateMin {
+		affiliateDisplayRebateRate = service.AffiliateRebateRateMin
+	}
+	if affiliateDisplayRebateRate > service.AffiliateRebateRateMax {
+		affiliateDisplayRebateRate = service.AffiliateRebateRateMax
 	}
 	affiliateRebateFreezeHours := previousSettings.AffiliateRebateFreezeHours
 	if req.AffiliateRebateFreezeHours != nil {
@@ -1616,6 +1629,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteName:                               req.SiteName,
 		SiteLogo:                               req.SiteLogo,
 		SiteSubtitle:                           req.SiteSubtitle,
+		DashboardNotice:                        req.DashboardNotice,
 		APIBaseURL:                             req.APIBaseURL,
 		ContactInfo:                            req.ContactInfo,
 		DocURL:                                 req.DocURL,
@@ -1631,6 +1645,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		DefaultConcurrency:                     req.DefaultConcurrency,
 		DefaultBalance:                         req.DefaultBalance,
 		AffiliateRebateRate:                    affiliateRebateRate,
+		AffiliateDisplayRebateRate:             affiliateDisplayRebateRate,
 		AffiliateRebateFreezeHours:             affiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:            affiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           affiliateRebatePerInviteeCap,
@@ -1893,6 +1908,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.ChannelMonitorDefaultIntervalSeconds
 			}
 			return previousSettings.ChannelMonitorDefaultIntervalSeconds
+		}(),
+		ChannelMonitorDegradedThresholdSeconds: func() int {
+			if req.ChannelMonitorDegradedThresholdSeconds != nil {
+				return *req.ChannelMonitorDegradedThresholdSeconds
+			}
+			return previousSettings.ChannelMonitorDegradedThresholdSeconds
 		}(),
 		ChannelMonitorHideThroughput: func() bool {
 			if req.ChannelMonitorHideThroughput != nil {
@@ -2244,6 +2265,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteName:                                               updatedSettings.SiteName,
 		SiteLogo:                                               updatedSettings.SiteLogo,
 		SiteSubtitle:                                           updatedSettings.SiteSubtitle,
+		DashboardNotice:                                        updatedSettings.DashboardNotice,
 		APIBaseURL:                                             updatedSettings.APIBaseURL,
 		ContactInfo:                                            updatedSettings.ContactInfo,
 		DocURL:                                                 updatedSettings.DocURL,
@@ -2361,11 +2383,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentAlipayForceQRCode:                               updatedPaymentCfg.AlipayForceQRCode,
 		PaymentAlipayMobilePrecreateDeepLink:                   updatedPaymentCfg.AlipayMobilePrecreateDeepLink,
 
-		ChannelMonitorEnabled:                updatedSettings.ChannelMonitorEnabled,
-		ChannelMonitorMode:                   updatedSettings.ChannelMonitorMode,
-		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
-		ChannelMonitorHideThroughput:         updatedSettings.ChannelMonitorHideThroughput,
-		ChannelMonitorShowQuota:              updatedSettings.ChannelMonitorShowQuota,
+		ChannelMonitorEnabled:                  updatedSettings.ChannelMonitorEnabled,
+		ChannelMonitorMode:                     updatedSettings.ChannelMonitorMode,
+		ChannelMonitorDefaultIntervalSeconds:   updatedSettings.ChannelMonitorDefaultIntervalSeconds,
+		ChannelMonitorDegradedThresholdSeconds: updatedSettings.ChannelMonitorDegradedThresholdSeconds,
+		ChannelMonitorHideThroughput:           updatedSettings.ChannelMonitorHideThroughput,
+		ChannelMonitorShowQuota:                updatedSettings.ChannelMonitorShowQuota,
 
 		GrokDefaultTextModel:           updatedSettings.GrokDefaultTextModel,
 		GrokCrossClientModelMapEnabled: updatedSettings.GrokCrossClientModelMapEnabled,

@@ -4,12 +4,7 @@
     <template v-if="isAdmin">
       <button
         @click="toggleDropdown"
-        class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors"
-        :class="[
-          hasUpdate
-            ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50'
-            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-800 dark:text-dark-400 dark:hover:bg-dark-700'
-        ]"
+        class="flex items-center gap-1.5 rounded-lg bg-gray-100 px-2 py-1 text-xs text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-800 dark:text-dark-400 dark:hover:bg-dark-700"
         :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
       >
         <span v-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
@@ -17,12 +12,13 @@
           v-else
           class="h-3 w-12 animate-pulse rounded bg-gray-200 font-medium dark:bg-dark-600"
         ></span>
-        <!-- Update indicator -->
-        <span v-if="hasUpdate" class="relative flex h-2 w-2">
-          <span
-            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"
-          ></span>
-          <span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
+        <!-- 更新提醒是本地版本号旁的附加状态，不替代版本号。 -->
+        <span v-if="hasUpdate" class="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+          <span class="relative flex h-2 w-2">
+            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
+            <span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
+          </span>
+          <span class="font-medium">{{ t('version.updateBadge') }}</span>
         </span>
       </button>
 
@@ -673,7 +669,9 @@ const dropdownRef = ref<HTMLElement | null>(null)
 const loading = computed(() => appStore.versionLoading)
 const currentVersion = computed(() => appStore.currentVersion || props.version || '')
 const latestVersion = computed(() => appStore.latestVersion)
-const hasUpdate = computed(() => appStore.hasUpdate)
+const hasUpdate = computed(() =>
+  Boolean(currentVersion.value && latestVersion.value && appStore.hasUpdate)
+)
 const releaseInfo = computed(() => appStore.releaseInfo)
 const buildType = computed(() => appStore.buildType)
 

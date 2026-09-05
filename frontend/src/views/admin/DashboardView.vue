@@ -273,12 +273,18 @@
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >{{ t('admin.dashboard.timeRange') }}:</span
                 >
-                <DateRangePicker
+              <DateRangePicker
                   v-model:start-date="startDate"
                   v-model:end-date="endDate"
-                  @change="onDateRangeChange"
-                />
+                @change="onDateRangeChange"
+              />
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.userScope') }}:</span>
+              <div class="w-32">
+                <Select v-model="userRoleFilter" :options="userRoleOptions" data-testid="dashboard-user-role-filter" @change="onUserRoleChange" />
               </div>
+            </div>
               <button @click="loadDashboardStats" :disabled="chartsLoading" class="btn btn-secondary">
                 {{ t('common.refresh') }}
               </button>
@@ -343,6 +349,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { isLocalPreviewSession } from '@/utils/localPreview'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 
@@ -429,6 +436,19 @@ const granularity = ref<'day' | 'hour'>('hour')
 const defaultRange = getLast24HoursRangeDates()
 const startDate = ref(defaultRange.start)
 const endDate = ref(defaultRange.end)
+// v2 starts at all users; the old key was written with an incorrect admin-only default.
+const USER_ROLE_FILTER_KEY = 'admin-dashboard-user-role-v2'
+const userRoleFilter = ref<'admin' | 'user' | ''>('')
+try {
+  const savedRole = localStorage.getItem(USER_ROLE_FILTER_KEY)
+  if (savedRole === 'admin' || savedRole === 'user' || savedRole === '') userRoleFilter.value = savedRole
+} catch { /* localStorage may be unavailable */ }
+const selectedUserRole = computed(() => userRoleFilter.value || undefined)
+const userRoleOptions = computed(() => [
+  { value: '', label: t('admin.dashboard.userRoleAll') },
+  { value: 'user', label: t('admin.dashboard.userRoleUser') },
+  { value: 'admin', label: t('admin.dashboard.userRoleAdmin') },
+])
 
 // Granularity options for Select component
 const granularityOptions = computed(() => [
@@ -617,9 +637,15 @@ const goToUserUsage = (item: UserSpendingRankingItem) => {
     query: {
       user_id: String(item.user_id),
       start_date: startDate.value,
-      end_date: endDate.value
+      end_date: endDate.value,
+      user_role: selectedUserRole.value || undefined,
     }
   })
+}
+
+const onUserRoleChange = () => {
+  try { localStorage.setItem(USER_ROLE_FILTER_KEY, userRoleFilter.value) } catch { /* ignore storage errors */ }
+  loadDashboardStats()
 }
 
 // Date range change handler
@@ -659,7 +685,8 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
       include_trend: true,
       include_model_stats: true,
       include_group_stats: false,
-      include_users_trend: false
+      include_users_trend: false,
+      user_role: selectedUserRole.value,
     })
     if (currentSeq !== chartLoadSeq) return
     if (includeStats && response.stats) {
@@ -669,8 +696,28 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
     modelStats.value = response.models || []
   } catch (error) {
     if (currentSeq !== chartLoadSeq) return
-    appStore.showError(t('admin.dashboard.failedToLoad'))
-    console.error('Error loading dashboard snapshot:', error)
+    if (includeStats && isLocalPreviewSession()) {
+      // The loopback preview has no API server. Keep the dashboard shell
+      // renderable with an explicit zero-valued snapshot instead of leaving it blank.
+      stats.value = {
+        total_users: 0, today_new_users: 0, active_users: 0, hourly_active_users: 0,
+        stats_updated_at: new Date(0).toISOString(), stats_stale: true,
+        total_api_keys: 0, active_api_keys: 0, total_accounts: 0, normal_accounts: 0,
+        error_accounts: 0, ratelimit_accounts: 0, overload_accounts: 0,
+        total_requests: 0, total_input_tokens: 0, total_output_tokens: 0,
+        total_cache_creation_tokens: 0, total_cache_read_tokens: 0, total_tokens: 0,
+        total_cost: 0, total_actual_cost: 0, total_account_cost: 0,
+        today_requests: 0, today_input_tokens: 0, today_output_tokens: 0,
+        today_cache_creation_tokens: 0, today_cache_read_tokens: 0, today_tokens: 0,
+        today_cost: 0, today_actual_cost: 0, today_account_cost: 0,
+        average_duration_ms: 0, uptime: 0, rpm: 0, tpm: 0,
+      }
+      trendData.value = []
+      modelStats.value = []
+    } else {
+      appStore.showError(t('admin.dashboard.failedToLoad'))
+      console.error('Error loading dashboard snapshot:', error)
+    }
   } finally {
     if (currentSeq === chartLoadSeq) {
       loading.value = false
@@ -687,7 +734,8 @@ const loadUsersTrend = async () => {
       start_date: startDate.value,
       end_date: endDate.value,
       granularity: granularity.value,
-      limit: 12
+      limit: 12,
+      user_role: selectedUserRole.value,
     })
     if (currentSeq !== usersTrendLoadSeq) return
     userTrend.value = response.trend || []
@@ -710,7 +758,8 @@ const loadUserSpendingRanking = async () => {
     const response = await adminAPI.dashboard.getUserSpendingRanking({
       start_date: startDate.value,
       end_date: endDate.value,
-      limit: rankingLimit
+      limit: rankingLimit,
+      user_role: selectedUserRole.value,
     })
     if (currentSeq !== rankingLoadSeq) return
     rankingItems.value = response.ranking || []

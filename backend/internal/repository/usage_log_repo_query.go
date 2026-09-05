@@ -95,10 +95,19 @@ func (r *usageLogRepository) Delete(ctx context.Context, id int64) error {
 // UsageLogFilters represents filters for usage log queries
 type UsageLogFilters = usagestats.UsageLogFilters
 
+func appendUsageLogUserRoleWhereCondition(conditions []string, args []any, role, userIDColumn string) ([]string, []any) {
+	if role == "" {
+		return conditions, args
+	}
+	conditions = append(conditions, fmt.Sprintf("%s IN (SELECT id FROM users WHERE role = $%d AND deleted_at IS NULL)", userIDColumn, len(args)+1))
+	return conditions, append(args, role)
+}
+
 // ListWithFilters lists usage logs with optional filters (for admin)
 func (r *usageLogRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
 	conditions := make([]string, 0, 9)
 	args := make([]any, 0, 9)
+	conditions, args = appendUsageLogUserRoleWhereCondition(conditions, args, filters.UserRole, "user_id")
 
 	if filters.UserID > 0 {
 		conditions = append(conditions, fmt.Sprintf("user_id = $%d", len(args)+1))
@@ -173,7 +182,7 @@ func shouldUseFastUsageLogTotal(filters UsageLogFilters) bool {
 		return false
 	}
 	// 强选择过滤下记录集通常较小，保留精确总数。
-	return filters.UserID == 0 && filters.APIKeyID == 0 && filters.AccountID == 0
+	return filters.UserID == 0 && filters.APIKeyID == 0 && filters.AccountID == 0 && filters.UserRole == ""
 }
 
 func (r *usageLogRepository) listUsageLogsWithPagination(ctx context.Context, whereClause string, args []any, params pagination.PaginationParams) ([]service.UsageLog, *pagination.PaginationResult, error) {

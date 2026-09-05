@@ -9,12 +9,13 @@ import (
 // ChannelMonitor 全局常量。
 // 这些是 MVP 阶段的硬编码值，按需可以提到 config 中。
 const (
-	// monitorRequestTimeout 单次模型请求总超时（含 Body 读取）。
-	monitorRequestTimeout = 45 * time.Second
+	// monitorRequestTimeout 单次模型请求总超时（含账号池内的串行 failover）。
+	// 网关监控探测每个账号最多等待 30s；保留足够窗口让默认最多 10 次切换完成。
+	monitorRequestTimeout = 6 * time.Minute
 	// monitorPingTimeout HEAD 请求 endpoint origin 的超时。
 	monitorPingTimeout = 8 * time.Second
-	// monitorDegradedThreshold 主请求成功但耗时超过该阈值视为 degraded。
-	monitorDegradedThreshold = 6 * time.Second
+	// monitorDegradedThreshold 主请求成功但耗时达到或超过该阈值视为 degraded。
+	monitorDegradedThreshold = 15 * time.Second
 	// monitorHistoryRetentionDays 明细历史保留天数。
 	// 60s 默认间隔 * 30 天 ≈ 43200 行/monitor/model，一般部署总量 <= 2M 行，
 	// PG 无压力；所以直接保留完整明细一个月，可用率查询可以全走原始行不依赖聚合。
@@ -134,8 +135,9 @@ const (
 	monitorIdleConnTimeout = 30 * time.Second
 	// monitorTLSHandshakeTimeout HTTP transport TLS 握手超时。
 	monitorTLSHandshakeTimeout = 10 * time.Second
-	// monitorResponseHeaderTimeout HTTP transport 等待响应头超时。
-	monitorResponseHeaderTimeout = 30 * time.Second
+	// monitorResponseHeaderTimeout 由网关监控探测的每账号 30s 子超时负责。
+	// 外层客户端不能提前取消请求，否则网关无法继续 failover。
+	monitorResponseHeaderTimeout = 0
 	// monitorPingDiscardMaxBytes ping 时丢弃响应体的最大字节数。
 	monitorPingDiscardMaxBytes = 1024
 
@@ -200,6 +202,18 @@ var (
 	)
 	ErrChannelMonitorAPIKeyDecryptFailed = infraerrors.InternalServer(
 		"CHANNEL_MONITOR_KEY_DECRYPT_FAILED", "api key decryption failed; please re-edit the monitor with a fresh key",
+	)
+	ErrChannelMonitorGroupNotFound = infraerrors.NotFound(
+		"CHANNEL_MONITOR_GROUP_NOT_FOUND", "channel monitor group not found",
+	)
+	ErrChannelMonitorGroupInvalidName = infraerrors.BadRequest(
+		"CHANNEL_MONITOR_GROUP_INVALID_NAME", "channel monitor group name is required and must be at most 100 characters",
+	)
+	ErrChannelMonitorGroupInvalidID = infraerrors.BadRequest(
+		"CHANNEL_MONITOR_GROUP_INVALID_ID", "channel monitor group id must be positive",
+	)
+	ErrChannelMonitorGroupInvalidSortOrder = infraerrors.BadRequest(
+		"CHANNEL_MONITOR_GROUP_INVALID_SORT_ORDER", "channel monitor sort order must be non-negative",
 	)
 )
 

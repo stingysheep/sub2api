@@ -124,6 +124,24 @@ func (s *DashboardService) GetDashboardStats(ctx context.Context) (*usagestats.D
 	return stats, nil
 }
 
+// GetDashboardStatsWithUserRole keeps role-scoped dashboard reads separate from the global cache.
+func (s *DashboardService) GetDashboardStatsWithUserRole(ctx context.Context, role string) (*usagestats.DashboardStats, error) {
+	if role == "" {
+		return s.GetDashboardStats(ctx)
+	}
+	type roleDashboardStatsRepo interface {
+		GetDashboardStatsWithUserRole(context.Context, string) (*usagestats.DashboardStats, error)
+	}
+	if repo, ok := s.usageRepo.(roleDashboardStatsRepo); ok {
+		stats, err := repo.GetDashboardStatsWithUserRole(ctx, role)
+		if err != nil {
+			return nil, fmt.Errorf("get dashboard stats with user role: %w", err)
+		}
+		return stats, nil
+	}
+	return s.GetDashboardStats(ctx)
+}
+
 func (s *DashboardService) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.TrendDataPoint, error) {
 	trend, err := s.usageRepo.GetUsageTrendWithFilters(ctx, startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType)
 	if err != nil {
@@ -400,12 +418,40 @@ func (s *DashboardService) GetUserUsageTrend(ctx context.Context, startTime, end
 	return trend, nil
 }
 
+func (s *DashboardService) GetUserUsageTrendWithRole(ctx context.Context, startTime, endTime time.Time, granularity string, limit int, role string) ([]usagestats.UserUsageTrendPoint, error) {
+	type roleTrendRepo interface {
+		GetUserUsageTrendWithRole(context.Context, time.Time, time.Time, string, int, string) ([]usagestats.UserUsageTrendPoint, error)
+	}
+	if repo, ok := s.usageRepo.(roleTrendRepo); ok {
+		trend, err := repo.GetUserUsageTrendWithRole(ctx, startTime, endTime, granularity, limit, role)
+		if err != nil {
+			return nil, fmt.Errorf("get user usage trend with role: %w", err)
+		}
+		return trend, nil
+	}
+	return s.GetUserUsageTrend(ctx, startTime, endTime, granularity, limit)
+}
+
 func (s *DashboardService) GetUserSpendingRanking(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.UserSpendingRankingResponse, error) {
 	ranking, err := s.usageRepo.GetUserSpendingRanking(ctx, startTime, endTime, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get user spending ranking: %w", err)
 	}
 	return ranking, nil
+}
+
+func (s *DashboardService) GetUserSpendingRankingWithRole(ctx context.Context, startTime, endTime time.Time, limit int, role string) (*usagestats.UserSpendingRankingResponse, error) {
+	type roleRankingRepo interface {
+		GetUserSpendingRankingWithRole(context.Context, time.Time, time.Time, int, string) (*usagestats.UserSpendingRankingResponse, error)
+	}
+	if repo, ok := s.usageRepo.(roleRankingRepo); ok {
+		ranking, err := repo.GetUserSpendingRankingWithRole(ctx, startTime, endTime, limit, role)
+		if err != nil {
+			return nil, fmt.Errorf("get user spending ranking with role: %w", err)
+		}
+		return ranking, nil
+	}
+	return s.GetUserSpendingRanking(ctx, startTime, endTime, limit)
 }
 
 func (s *DashboardService) GetUserBreakdownStats(ctx context.Context, startTime, endTime time.Time, dim usagestats.UserBreakdownDimension, limit int) ([]usagestats.UserBreakdownItem, error) {

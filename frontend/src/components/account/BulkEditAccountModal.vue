@@ -21,6 +21,46 @@
         </p>
       </div>
 
+      <!-- Account order by upstream provider profile -->
+      <section v-if="orderSections.length" class="rounded-lg border border-gray-200 bg-gray-50/70 p-3 dark:border-dark-700 dark:bg-dark-900/20">
+        <div class="mb-2 flex items-start justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('admin.accounts.bulkEdit.accountOrder') }}</h3>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.bulkEdit.accountOrderDescription') }}</p>
+          </div>
+          <span class="shrink-0 text-xs text-gray-400">{{ orderAccounts.length }}</span>
+        </div>
+        <div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+          <section v-for="section in orderSections" :key="section.id" :data-testid="`bulk-account-order-section-${section.id}`" class="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800">
+            <button type="button" class="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-gray-50 dark:hover:bg-dark-700" @click="toggleOrderSection(section.id)">
+              <Icon :name="expandedOrderSections.has(section.id) ? 'chevronDown' : 'chevronRight'" size="xs" class="shrink-0 text-gray-400" />
+              <span class="min-w-0 flex-1 truncate text-xs font-semibold text-gray-800 dark:text-gray-100">{{ section.name }}</span>
+              <span class="shrink-0 text-[11px] text-gray-400">{{ orderLists[section.id]?.length || 0 }}</span>
+            </button>
+            <VueDraggable
+              v-if="expandedOrderSections.has(section.id)"
+              v-model="orderLists[section.id]"
+              class="space-y-1 border-t border-gray-100 px-2 py-1.5 dark:border-dark-700"
+              handle=".account-order-drag-handle"
+              :animation="180"
+              :disabled="savingOrder"
+              :group="{ name: 'bulk-account-order', pull: false, put: false }"
+              @end="onOrderDragEnd(section.id)"
+            >
+              <div v-for="(account, accountIndex) in orderLists[section.id]" :key="account.id" class="flex min-w-0 items-center gap-1.5 rounded border border-gray-100 bg-gray-50 px-1.5 py-1.5 transition-colors dark:border-dark-700 dark:bg-dark-900/40">
+                <button type="button" class="account-order-drag-handle flex h-6 w-6 shrink-0 cursor-grab items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-600 active:cursor-grabbing dark:hover:bg-dark-700 dark:hover:text-gray-200" :title="t('admin.accounts.bulkEdit.dragAccount')">
+                  <Icon name="gripVertical" size="xs" />
+                </button>
+                <span class="min-w-0 flex-1 truncate text-xs text-gray-700 dark:text-gray-200" :title="account.name">{{ account.name }}</span>
+                <span class="shrink-0 text-[11px] text-gray-400">{{ accountIndex + 1 }}</span>
+                <span class="shrink-0 rounded bg-gray-100 px-1 py-0.5 text-[10px] text-gray-500 dark:bg-dark-700 dark:text-gray-400">{{ account.platform }}</span>
+              </div>
+              <div v-if="!orderLists[section.id]?.length" class="px-1 py-1 text-[11px] text-gray-400">{{ t('admin.accounts.bulkEdit.noAccounts') }}</div>
+            </VueDraggable>
+          </section>
+        </div>
+      </section>
+
       <!-- Mixed platform warning -->
       <div v-if="isMixedPlatform" class="rounded-lg bg-amber-50 p-4 dark:bg-amber-900/20">
         <p class="text-sm text-amber-700 dark:text-amber-400">
@@ -1484,8 +1524,11 @@ import type {
   AccountType,
   OpenAICompactMode,
   OpenAIEndpointCapability,
-  OpenAIResponsesMode
+  OpenAIResponsesMode,
+  Account
 } from '@/types'
+import type { UpstreamProviderProfile } from '@/api/admin/settings'
+import { VueDraggable } from 'vue-draggable-plus'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -1530,6 +1573,8 @@ interface Props {
   }
   proxies: ProxyConfig[]
   groups: AdminGroup[]
+  accounts?: Account[]
+  upstreamProfiles?: UpstreamProviderProfile[]
 }
 
 const props = defineProps<Props>()
@@ -1541,6 +1586,82 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const appStore = useAppStore()
 
+// Account order is managed here, not in the read-only upstream profile overview.
+const orderAccounts = computed(() => props.accounts ?? [])
+const expandedOrderSections = ref<Set<number | string>>(new Set())
+const orderLists = ref<Record<number | string, Account[]>>({})
+const savingOrder = ref(false)
+
+const orderProfileIDFor = (account: Account) => {
+  // Different API versions expose this association at different levels.
+  // Prefer the explicit response field, then keep compatibility with the
+  // extra payload used by older/local responses.
+  const accountWithProfile = account as Account & { upstream_provider_profile_id?: number | string | null }
+  const value = accountWithProfile.upstream_provider_profile_id ?? account.extra?.upstream_provider_profile_id
+  const id = Number(value)
+  return Number.isFinite(id) && id > 0 ? id : null
+}
+
+const orderSections = computed(() => {
+  const sections: Array<{ id: number | string; name: string }> = (props.upstreamProfiles ?? []).map(profile => ({
+    id: profile.id,
+    name: profile.name
+  }))
+  if ((orderLists.value.unassigned?.length ?? 0) > 0) {
+    sections.push({ id: 'unassigned', name: t('admin.accounts.upstreamProfiles.unassigned') })
+  }
+  return sections
+})
+
+const rebuildOrderLists = () => {
+  const lists: Record<number | string, Account[]> = { unassigned: [] }
+  for (const profile of props.upstreamProfiles ?? []) lists[profile.id] = []
+  for (const account of orderAccounts.value) {
+    const profileID = orderProfileIDFor(account)
+    if (profileID != null && lists[profileID]) lists[profileID].push({ ...account })
+    else lists.unassigned.push({ ...account })
+  }
+  for (const key of Object.keys(lists)) {
+    lists[key] = [...lists[key]].sort((a, b) => (a.priority ?? 1) - (b.priority ?? 1) || a.id - b.id)
+  }
+  orderLists.value = lists
+  const availableIDs = new Set(orderSections.value.map(section => section.id))
+  const nextExpanded = new Set([...expandedOrderSections.value].filter(id => availableIDs.has(id)))
+  if (!nextExpanded.size && orderSections.value.length) nextExpanded.add(orderSections.value[0].id)
+  expandedOrderSections.value = nextExpanded
+}
+
+const toggleOrderSection = (id: number | string) => {
+  const next = new Set(expandedOrderSections.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedOrderSections.value = next
+}
+
+const onOrderDragEnd = async (sectionID: number | string) => {
+  const list = orderLists.value[sectionID] ?? []
+  if (!list.length || savingOrder.value) return
+  savingOrder.value = true
+  try {
+    await Promise.all(list.map((account, index) => adminAPI.accounts.update(account.id, { priority: index + 1 })))
+    orderLists.value[sectionID] = list.map((account, index) => ({ ...account, priority: index + 1 }))
+    appStore.showSuccess(t('admin.accounts.bulkEdit.orderSaved'))
+  } catch (error) {
+    console.error('Failed to save account order:', error)
+    appStore.showError(t('admin.accounts.bulkEdit.orderSaveFailed'))
+    rebuildOrderLists()
+  } finally {
+    savingOrder.value = false
+  }
+}
+
+watch(
+  () => [props.show, props.accounts, props.upstreamProfiles],
+  () => {
+    if (props.show) rebuildOrderLists()
+  },
+  { immediate: true, deep: true }
+)
 // Platform awareness
 const targetMode = computed(() => props.target?.mode ?? 'selected')
 const targetPreviewCount = computed(() => props.target?.previewCount ?? props.accountIds.length)

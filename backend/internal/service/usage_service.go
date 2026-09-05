@@ -461,3 +461,17 @@ func (s *UsageService) GetStatsWithFilters(ctx context.Context, filters usagesta
 	}
 	return stats, nil
 }
+
+func (s *UsageService) GetProfitBreakdown(ctx context.Context, startTime, endTime time.Time) (*usagestats.ProfitBreakdown, error) {
+	repo, ok := s.usageRepo.(interface {
+		GetProfitBreakdown(context.Context, time.Time, time.Time) (*usagestats.ProfitBreakdown, error)
+	})
+	if !ok {
+		return &usagestats.ProfitBreakdown{}, nil
+	}
+	breakdown, err := repo.GetProfitBreakdown(ctx, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("get profit breakdown: %w", err)
+	}
+	return breakdown, nil
+}

@@ -77,6 +77,9 @@ type AdminService interface {
 	// 可调度的 OpenAI 账号，用于按组计算调度分数。
 	ListOpenAISchedulableAccountsForSchedulerScore(ctx context.Context, groupID *int64) ([]Account, error)
 	GetAccount(ctx context.Context, id int64) (*Account, error)
+	AddAccountToGroup(ctx context.Context, accountID, groupID int64) error
+	RemoveAccountFromGroup(ctx context.Context, accountID, groupID int64) error
+	UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) error
 	GetAccountsByIDs(ctx context.Context, ids []int64) ([]*Account, error)
 	CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error)
 	// DuplicateAccount creates an independent account from an existing account's configuration.
@@ -528,12 +531,13 @@ type UpdateProxyInput struct {
 }
 
 type GenerateRedeemCodesInput struct {
-	Count        int
-	Type         string
-	Value        float64
-	GroupID      *int64 // 订阅类型专用：关联的分组ID
-	ValidityDays int    // 订阅类型专用：有效天数
-	ExpiresAt    *time.Time
+	Count         int
+	Type          string
+	Value         float64
+	BalanceSource BalanceSource
+	GroupID       *int64 // 订阅类型专用：关联的分组ID
+	ValidityDays  int    // 订阅类型专用：有效天数
+	ExpiresAt     *time.Time
 }
 
 type ProxyBatchDeleteResult struct {

@@ -98,8 +98,39 @@ export interface ChannelMonitor {
   check_mode: CheckMode
   /** 配额模式关联的账号 ID；探活模式为 null */
   account_id: number | null
+  /** 独立的管理员监控分组；与用户业务分组 group_name 完全不同 */
+  monitor_group_id?: number | null
+  /** 同一监控分组内的展示顺序，数值越小越靠前 */
+  monitor_sort_order?: number
+  monitor_group_sort_order?: number
+  monitor_group_name?: string | null
   /** 主模型最近一次配额快照（配额模式；无历史时为 null） */
   latest_quota?: MonitorQuotaSnapshot | null
+}
+
+export interface ChannelMonitorGroup {
+  id: number
+  name: string
+  sort_order: number
+  monitor_count: number
+  created_by: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ChannelMonitorGroupListResponse {
+  items: ChannelMonitorGroup[]
+}
+
+export interface MonitorGroupSortUpdate {
+  id: number
+  sort_order: number
+}
+
+export interface MonitorSortUpdate {
+  id: number
+  monitor_group_id: number | null
+  monitor_sort_order: number
 }
 
 export interface ExtraModelStatus {
@@ -148,6 +179,8 @@ export interface CreateParams {
   extra_headers?: Record<string, string>
   body_override_mode?: BodyOverrideMode
   body_override?: Record<string, unknown> | null
+  monitor_group_id?: number | null
+  monitor_sort_order?: number
 }
 
 // Update request: api_key 空串 = 不修改；clear_template=true 时把 template_id 置空；
@@ -343,6 +376,34 @@ export async function listHistory(
   return data
 }
 
+/** 管理员专用：独立监控分组，不复用业务分组。 */
+export async function listGroups(): Promise<ChannelMonitorGroupListResponse> {
+  const { data } = await apiClient.get<ChannelMonitorGroupListResponse>('/admin/channel-monitor-groups')
+  return data
+}
+
+export async function createGroup(params: { name: string }): Promise<ChannelMonitorGroup> {
+  const { data } = await apiClient.post<ChannelMonitorGroup>('/admin/channel-monitor-groups', params)
+  return data
+}
+
+export async function updateGroup(id: number, params: { name?: string }): Promise<ChannelMonitorGroup> {
+  const { data } = await apiClient.put<ChannelMonitorGroup>(`/admin/channel-monitor-groups/${id}`, params)
+  return data
+}
+
+export async function deleteGroup(id: number): Promise<void> {
+  await apiClient.delete(`/admin/channel-monitor-groups/${id}`)
+}
+
+export async function updateGroupSortOrder(updates: MonitorGroupSortUpdate[]): Promise<void> {
+  await apiClient.put('/admin/channel-monitor-groups/sort-order', { updates })
+}
+
+export async function updateMonitorSortOrder(updates: MonitorSortUpdate[]): Promise<void> {
+  await apiClient.put('/admin/channel-monitors/sort-order', { updates })
+}
+
 export const channelMonitorAPI = {
   list,
   get,
@@ -352,6 +413,12 @@ export const channelMonitorAPI = {
   del,
   runNow,
   listHistory,
+  listGroups,
+  createGroup,
+  updateGroup,
+  deleteGroup,
+  updateGroupSortOrder,
+  updateMonitorSortOrder,
 }
 
 export default channelMonitorAPI

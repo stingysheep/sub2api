@@ -73,6 +73,11 @@ func (h *UsageHandler) List(c *gin.Context) {
 
 	// Parse filters
 	var userID, apiKeyID, accountID, groupID int64
+	userRole := strings.TrimSpace(c.Query("user_role"))
+	if userRole != "" && userRole != "admin" && userRole != "user" {
+		response.BadRequest(c, "Invalid user_role, use admin or user")
+		return
+	}
 	if userIDStr := c.Query("user_id"); userIDStr != "" {
 		id, err := strconv.ParseInt(userIDStr, 10, 64)
 		if err != nil {
@@ -190,6 +195,7 @@ func (h *UsageHandler) List(c *gin.Context) {
 	}
 	filters := usagestats.UsageLogFilters{
 		UserID:                userID,
+		UserRole:              userRole,
 		APIKeyID:              apiKeyID,
 		AccountID:             accountID,
 		GroupID:               groupID,
@@ -225,6 +231,11 @@ func (h *UsageHandler) List(c *gin.Context) {
 func (h *UsageHandler) Stats(c *gin.Context) {
 	// Parse filters - same as List endpoint
 	var userID, apiKeyID, accountID, groupID int64
+	userRole := strings.TrimSpace(c.Query("user_role"))
+	if userRole != "" && userRole != "admin" && userRole != "user" {
+		response.BadRequest(c, "Invalid user_role, use admin or user")
+		return
+	}
 	if userIDStr := c.Query("user_id"); userIDStr != "" {
 		id, err := strconv.ParseInt(userIDStr, 10, 64)
 		if err != nil {
@@ -263,6 +274,11 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 
 	model := c.Query("model")
 	billingMode := strings.TrimSpace(c.Query("billing_mode"))
+	accountCostBasis := strings.TrimSpace(c.Query("account_cost_basis"))
+	if accountCostBasis != "" && accountCostBasis != "current_account_rate" {
+		response.BadRequest(c, "Invalid account_cost_basis, use current_account_rate")
+		return
+	}
 
 	var requestType *int16
 	var stream *bool
@@ -350,6 +366,7 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 	// Build filters and call GetStatsWithFilters
 	filters := usagestats.UsageLogFilters{
 		UserID:                userID,
+		UserRole:              userRole,
 		APIKeyID:              apiKeyID,
 		AccountID:             accountID,
 		GroupID:               groupID,
@@ -360,6 +377,7 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 		NativeCompactionV2:    nativeCompactionV2,
 		BillingType:           billingType,
 		BillingMode:           billingMode,
+		AccountCostBasis:      accountCostBasis,
 		UpstreamModelMismatch: upstreamModelMismatch,
 		StartTime:             &startTime,
 		EndTime:               &endTime,
@@ -386,6 +404,34 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 	}
 
 	response.Success(c, stats)
+}
+
+// ProfitBreakdown returns ordinary-user profitability grouped by channel/group and model.
+func (h *UsageHandler) ProfitBreakdown(c *gin.Context) {
+	userTZ := c.Query("timezone")
+	startDate := strings.TrimSpace(c.Query("start_date"))
+	endDate := strings.TrimSpace(c.Query("end_date"))
+	if startDate == "" || endDate == "" {
+		response.BadRequest(c, "start_date and end_date are required")
+		return
+	}
+	startTime, err := timezone.ParseInUserLocation("2006-01-02", startDate, userTZ)
+	if err != nil {
+		response.BadRequest(c, "Invalid start_date format, use YYYY-MM-DD")
+		return
+	}
+	endTime, err := timezone.ParseInUserLocation("2006-01-02", endDate, userTZ)
+	if err != nil {
+		response.BadRequest(c, "Invalid end_date format, use YYYY-MM-DD")
+		return
+	}
+	endTime = endTime.AddDate(0, 0, 1)
+	breakdown, err := h.usageService.GetProfitBreakdown(c.Request.Context(), startTime, endTime)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, breakdown)
 }
 
 // SearchUsers handles searching users by email keyword

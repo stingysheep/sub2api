@@ -16,6 +16,16 @@ export interface DefaultSubscriptionSetting {
   validity_days: number;
 }
 
+export interface UpstreamProviderProfile {
+  id: number;
+  sort_order: number;
+  name: string;
+  name_prefix: string;
+  base_url: string;
+  platform?: string;
+  enabled: boolean;
+}
+
 // ── 平台限额类型 ──────────────────────────────────────────────────
 export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity" | "grok"
 export type QuotaWindowType = "daily" | "weekly" | "monthly"
@@ -419,6 +429,7 @@ export interface SystemSettings {
   // Default settings
   default_balance: number;
   affiliate_rebate_rate: number;
+  affiliate_display_rebate_rate: number;
   affiliate_rebate_freeze_hours: number;
   affiliate_rebate_duration_days: number;
   affiliate_rebate_per_invitee_cap: number;
@@ -475,6 +486,7 @@ export interface SystemSettings {
   site_name: string;
   site_logo: string;
   site_subtitle: string;
+  dashboard_notice?: string;
   api_base_url: string;
   contact_info: string;
   doc_url: string;
@@ -718,6 +730,7 @@ export interface SystemSettings {
   channel_monitor_enabled: boolean;
   channel_monitor_mode?: 'v1' | 'v2';
   channel_monitor_default_interval_seconds: number;
+  channel_monitor_degraded_threshold_seconds: number;
   channel_monitor_hide_throughput?: boolean;
   channel_monitor_show_quota?: boolean;
 
@@ -760,6 +773,7 @@ export interface UpdateSettingsRequest {
   login_agreement_documents?: LoginAgreementDocument[];
   default_balance?: number;
   affiliate_rebate_rate?: number;
+  affiliate_display_rebate_rate?: number;
   affiliate_rebate_freeze_hours?: number;
   affiliate_rebate_duration_days?: number;
   affiliate_rebate_per_invitee_cap?: number;
@@ -815,6 +829,7 @@ export interface UpdateSettingsRequest {
   site_name?: string;
   site_logo?: string;
   site_subtitle?: string;
+  dashboard_notice?: string;
   api_base_url?: string;
   contact_info?: string;
   doc_url?: string;
@@ -1019,6 +1034,7 @@ export interface UpdateSettingsRequest {
   channel_monitor_enabled?: boolean;
   channel_monitor_mode?: 'v1' | 'v2';
   channel_monitor_default_interval_seconds?: number;
+  channel_monitor_degraded_threshold_seconds?: number;
   channel_monitor_hide_throughput?: boolean;
   channel_monitor_show_quota?: boolean;
 
@@ -1062,6 +1078,18 @@ export async function updateSettings(
     settings,
   );
   return data;
+}
+
+export async function getUpstreamProviderProfiles(): Promise<UpstreamProviderProfile[]> {
+  const { data } = await apiClient.get<UpstreamProviderProfile[]>('/admin/settings/upstream-providers')
+  return data
+}
+
+export async function updateUpstreamProviderProfiles(
+  profiles: UpstreamProviderProfile[],
+): Promise<UpstreamProviderProfile[]> {
+  const { data } = await apiClient.put<UpstreamProviderProfile[]>('/admin/settings/upstream-providers', { profiles })
+  return data
 }
 
 /**
@@ -1557,6 +1585,8 @@ export async function resetWebSearchUsage(payload: {
 export const settingsAPI = {
   getSettings,
   updateSettings,
+  getUpstreamProviderProfiles,
+  updateUpstreamProviderProfiles,
   testSmtpConnection,
   sendTestEmail,
   getEmailTemplates,

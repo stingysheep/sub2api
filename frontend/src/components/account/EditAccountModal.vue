@@ -26,6 +26,21 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <div v-if="upstreamProfiles?.length" class="rounded-md border border-gray-200 p-3 dark:border-dark-700">
+        <label class="input-label">{{ t('admin.accounts.upstreamProfiles.select') }}</label>
+        <select v-model="selectedUpstreamProfileID" class="input">
+          <option :value="null">{{ t('admin.accounts.upstreamProfiles.none') }}</option>
+          <option v-for="profile in upstreamProfiles" :key="profile.id" :value="profile.id">
+            {{ profile.name }}{{ profile.enabled ? '' : ` (${t('common.disabled')})` }}
+          </option>
+        </select>
+        <p v-if="selectedUpstreamProfile" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          {{ selectedUpstreamProfile.name_prefix || t('admin.accounts.upstreamProfiles.noPrefix') }}
+          <span v-if="selectedUpstreamProfile.base_url" class="mx-1">·</span>
+          {{ selectedUpstreamProfile.base_url }}
+        </p>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
@@ -72,7 +87,7 @@
               <input v-model="editAdaptiveBaseUrls[item.value]" type="text" class="input" />
             </div>
           </div>
-          <p v-if="!cnSupportsNativeResponses(account.platform)" class="input-hint">
+          <p v-if="account.platform !== 'deepseek'" class="input-hint">
             {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
           </p>
         </div>
@@ -2947,7 +2962,6 @@ import {
   isHeaderOverrideCapable,
   splitHeaderOverridesObject,
   validateHeaderOverrideRows,
-  cnSupportsNativeResponses,
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
   HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
@@ -2983,12 +2997,14 @@ import {
   splitModelMappingObject,
   isValidWildcardPattern
 } from '@/composables/useModelWhitelist'
+import type { UpstreamProviderProfile } from '@/api/admin/settings'
 
 interface Props {
   show: boolean
   account: Account | null
   proxies: Proxy[]
   groups: AdminGroup[]
+  upstreamProfiles?: UpstreamProviderProfile[]
 }
 
 const props = defineProps<Props>()
@@ -3096,7 +3112,7 @@ const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: strin
     { value: 'chat_completions', labelKey: 'chatCompletions' },
     { value: 'anthropic', labelKey: 'anthropic' }
   ]
-  if (cnSupportsNativeResponses(props.account?.platform ?? '')) {
+  if (props.account?.platform === 'deepseek') {
     opts.push({ value: 'responses', labelKey: 'responses' })
   }
   return opts
@@ -3106,7 +3122,7 @@ const editAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol;
     { value: 'chat_completions', labelKey: 'chatCompletions' },
     { value: 'anthropic', labelKey: 'anthropic' }
   ]
-  if (cnSupportsNativeResponses(props.account?.platform ?? '')) opts.push({ value: 'responses', labelKey: 'responses' })
+  if (props.account?.platform === 'deepseek') opts.push({ value: 'responses', labelKey: 'responses' })
   return opts
 })
 watch(editApiProtocol, (protocol, previousProtocol) => {
@@ -3645,6 +3661,11 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+const selectedUpstreamProfileID = ref<number | null>(null)
+const selectedUpstreamProfile = computed(() =>
+  (props.upstreamProfiles || []).find(profile => profile.id === selectedUpstreamProfileID.value) || null
+)
+
 const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
   upstreamBillingRateSyncEnabled.value = enabled
   if (enabled) {
@@ -3772,6 +3793,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedScheduling.value = false
   allowOverages.value = false
 	const extra = newAccount.extra as Record<string, unknown> | undefined
+	selectedUpstreamProfileID.value = typeof extra?.upstream_provider_profile_id === 'number'
+	  ? extra.upstream_provider_profile_id
+	  : null
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
 	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
@@ -3996,7 +4020,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         storedProtocol === 'responses'
           ? storedProtocol
           : 'chat_completions'
-      if (!cnSupportsNativeResponses(newAccount.platform) && editApiProtocol.value === 'responses') {
+      if (newAccount.platform !== 'deepseek' && editApiProtocol.value === 'responses') {
         editApiProtocol.value = 'chat_completions'
       }
       const adaptiveDefaults = defaultCNAdaptiveBaseUrls(newAccount.platform, editAccountMode.value)
@@ -4212,42 +4236,31 @@ const syncAntigravityUpstreamModels = async () => {
 
   isSyncingAntigravityUpstream.value = true
   try {
-    const result = await adminAPI.accounts.syncUpstreamModels(props.account.id)
-    const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
+	const result = await adminAPI.accounts.syncUpstreamModels(props.account.id)
+	const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
+	const previousMappings = antigravityModelMappings.value
+	antigravityModelMappings.value = upstreamModels.map((model) => ({ from: model, to: model }))
+	const changed = previousMappings.length !== upstreamModels.length || upstreamModels.some((model, index) => {
+		const previous = previousMappings[index]
+		return !previous || previous.from !== model || previous.to !== model
+	})
+
     if (upstreamModels.length === 0) {
       appStore.showInfo(t('admin.accounts.syncUpstreamModelsEmpty'))
-      return
-    }
-
-    let addedCount = 0
-    for (const model of upstreamModels) {
-      const exists = antigravityModelMappings.value.some((mapping) => mapping.from === model)
-      if (!exists) {
-        antigravityModelMappings.value.push({ from: model, to: model })
-        addedCount += 1
-      }
-    }
-
-    const warnings = result.warnings ?? []
-    const hasPartialMetadata = warnings.some(
-      (warning) => warning.code === 'upstream_model_metadata_partial'
-    )
-    const hasIncompleteMetadata = warnings.some(
-      (warning) => warning.code === 'upstream_model_metadata_incomplete'
-    )
-    if (hasIncompleteMetadata) {
-      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
-      return
-    }
-    if (addedCount > 0) {
-      appStore.showSuccess(t('admin.accounts.syncUpstreamModelsSuccess', { count: addedCount, total: upstreamModels.length }))
+    } else if (changed) {
+      appStore.showSuccess(t('admin.accounts.syncUpstreamModelsReplaced', { count: upstreamModels.length }))
     } else {
       appStore.showInfo(t('admin.accounts.syncUpstreamModelsNoChanges', { count: upstreamModels.length }))
     }
-    if (hasPartialMetadata) {
+
+    const warnings = result.warnings ?? []
+    if (warnings.some((warning) => warning.code === 'upstream_model_metadata_incomplete')) {
+      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
+    } else if (warnings.some((warning) => warning.code === 'upstream_model_metadata_partial')) {
       appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
     }
   } catch (error) {
+    antigravityModelMappings.value = []
     const message = error instanceof Error ? error.message : t('admin.accounts.syncUpstreamModelsFailed')
     appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
   } finally {
@@ -5400,18 +5413,21 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
-    // 上游ID头名只在改动时写回 extra，避免用弹窗打开时的快照覆盖运行态键。
+    // 上游ID头名和 provider profile 都只写入当前编辑得到的 extra。
+    const currentExtraForMetadata = (updatePayload.extra as Record<string, unknown>) ||
+      { ...((props.account.extra as Record<string, unknown>) || {}) }
     const nextUpstreamRequestIdHeader = upstreamRequestIdHeader.value.trim()
-    if (nextUpstreamRequestIdHeader !== readUpstreamRequestIdHeader(props.account.extra)) {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) || (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      if (nextUpstreamRequestIdHeader) {
-        newExtra.upstream_request_id_header = nextUpstreamRequestIdHeader
-      } else {
-        delete newExtra.upstream_request_id_header
-      }
-      updatePayload.extra = newExtra
+    if (nextUpstreamRequestIdHeader) {
+      currentExtraForMetadata.upstream_request_id_header = nextUpstreamRequestIdHeader
+    } else {
+      delete currentExtraForMetadata.upstream_request_id_header
     }
+    if (selectedUpstreamProfileID.value != null) {
+      currentExtraForMetadata.upstream_provider_profile_id = selectedUpstreamProfileID.value
+    } else {
+      delete currentExtraForMetadata.upstream_provider_profile_id
+    }
+    updatePayload.extra = currentExtraForMetadata
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       await submitUpdateAccount(accountID, updatePayload)

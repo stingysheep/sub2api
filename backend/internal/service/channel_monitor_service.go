@@ -25,6 +25,15 @@ type ChannelMonitorRepository interface {
 	Update(ctx context.Context, m *ChannelMonitor) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, params ChannelMonitorListParams) ([]*ChannelMonitor, int64, error)
+
+	// 监控分组与排序
+	ListGroups(ctx context.Context) ([]*ChannelMonitorGroup, error)
+	GetGroupByID(ctx context.Context, id int64) (*ChannelMonitorGroup, error)
+	CreateGroup(ctx context.Context, group *ChannelMonitorGroup) error
+	UpdateGroup(ctx context.Context, group *ChannelMonitorGroup) error
+	DeleteGroup(ctx context.Context, id int64) error
+	UpdateGroupSortOrder(ctx context.Context, updates []ChannelMonitorGroupSortOrderUpdate) error
+	UpdateMonitorSortOrder(ctx context.Context, updates []ChannelMonitorSortOrderUpdate) error
 	FindByDuplicateOperationID(ctx context.Context, operationID string) (*ChannelMonitor, error)
 
 	// 调度器辅助
@@ -144,6 +153,107 @@ func (s *ChannelMonitorService) Get(ctx context.Context, id int64) (*ChannelMoni
 	return m, nil
 }
 
+// validateMonitorGroup 确认监控分组存在；nil 表示移入未分组。
+func (s *ChannelMonitorService) validateMonitorGroup(ctx context.Context, id *int64) error {
+	if id == nil {
+		return nil
+	}
+	if *id <= 0 {
+		return ErrChannelMonitorGroupInvalidID
+	}
+	if _, err := s.repo.GetGroupByID(ctx, *id); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ListMonitorGroups 返回管理员维护的监控分组。
+func (s *ChannelMonitorService) ListMonitorGroups(ctx context.Context) ([]*ChannelMonitorGroup, error) {
+	groups, err := s.repo.ListGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list channel monitor groups: %w", err)
+	}
+	return groups, nil
+}
+
+// CreateMonitorGroup 创建管理员监控分组。
+func (s *ChannelMonitorService) CreateMonitorGroup(ctx context.Context, name string, createdBy int64) (*ChannelMonitorGroup, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 100 {
+		return nil, ErrChannelMonitorGroupInvalidName
+	}
+	group := &ChannelMonitorGroup{Name: name, CreatedBy: createdBy}
+	if err := s.repo.CreateGroup(ctx, group); err != nil {
+		return nil, fmt.Errorf("create channel monitor group: %w", err)
+	}
+	return group, nil
+}
+
+// UpdateMonitorGroup 更新管理员监控分组名称。
+func (s *ChannelMonitorService) UpdateMonitorGroup(ctx context.Context, id int64, name string) (*ChannelMonitorGroup, error) {
+	if id <= 0 {
+		return nil, ErrChannelMonitorGroupInvalidID
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 100 {
+		return nil, ErrChannelMonitorGroupInvalidName
+	}
+	group, err := s.repo.GetGroupByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	group.Name = name
+	if err := s.repo.UpdateGroup(ctx, group); err != nil {
+		return nil, fmt.Errorf("update channel monitor group: %w", err)
+	}
+	return group, nil
+}
+
+// DeleteMonitorGroup 删除分组，所属监控由数据库外键自动回到未分组。
+func (s *ChannelMonitorService) DeleteMonitorGroup(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return ErrChannelMonitorGroupInvalidID
+	}
+	if err := s.repo.DeleteGroup(ctx, id); err != nil {
+		return fmt.Errorf("delete channel monitor group: %w", err)
+	}
+	return nil
+}
+
+// UpdateMonitorGroupSortOrder 批量更新分组排序。
+func (s *ChannelMonitorService) UpdateMonitorGroupSortOrder(ctx context.Context, updates []ChannelMonitorGroupSortOrderUpdate) error {
+	for _, update := range updates {
+		if update.ID <= 0 {
+			return ErrChannelMonitorGroupInvalidID
+		}
+		if update.SortOrder < 0 {
+			return ErrChannelMonitorGroupInvalidSortOrder
+		}
+	}
+	return s.repo.UpdateGroupSortOrder(ctx, updates)
+}
+
+// UpdateMonitorSortOrder 批量更新监控所属分组和组内排序。
+func (s *ChannelMonitorService) UpdateMonitorSortOrder(ctx context.Context, updates []ChannelMonitorSortOrderUpdate) error {
+	for _, update := range updates {
+		if update.ID <= 0 {
+			return ErrChannelMonitorNotFound
+		}
+		if update.MonitorGroupID != nil && *update.MonitorGroupID <= 0 {
+			return ErrChannelMonitorGroupInvalidID
+		}
+		if update.MonitorSortOrder < 0 {
+			return ErrChannelMonitorGroupInvalidSortOrder
+		}
+	}
+	for _, update := range updates {
+		if err := s.validateMonitorGroup(ctx, update.MonitorGroupID); err != nil {
+			return err
+		}
+	}
+	return s.repo.UpdateMonitorSortOrder(ctx, updates)
+}
+
 // Create 创建监控（内部加密 api_key）。
 func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCreateParams) (*ChannelMonitor, error) {
 	if err := validateCreateParams(p); err != nil {
@@ -156,6 +266,9 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 		return nil, err
 	}
 	if err := s.validateLinkedAccount(ctx, p.Provider, p.AccountID); err != nil {
+		return nil, err
+	}
+	if err := s.validateMonitorGroup(ctx, p.MonitorGroupID); err != nil {
 		return nil, err
 	}
 	checkMode := defaultCheckMode(p.CheckMode)
@@ -172,6 +285,8 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 		PrimaryModel:     normalizeMonitorPrimaryModel(p.Provider, checkMode, p.PrimaryModel),
 		ExtraModels:      normalizeModels(p.ExtraModels),
 		GroupName:        strings.TrimSpace(p.GroupName),
+		MonitorGroupID:   cloneInt64Pointer(p.MonitorGroupID),
+		MonitorSortOrder: p.MonitorSortOrder,
 		Enabled:          p.Enabled,
 		IntervalSeconds:  p.IntervalSeconds,
 		JitterSeconds:    p.JitterSeconds,
@@ -239,6 +354,8 @@ func (s *ChannelMonitorService) Duplicate(
 		PrimaryModel:         source.PrimaryModel,
 		ExtraModels:          append([]string{}, source.ExtraModels...),
 		GroupName:            source.GroupName,
+		MonitorGroupID:       cloneInt64Pointer(source.MonitorGroupID),
+		MonitorSortOrder:     source.MonitorSortOrder,
 		Enabled:              false,
 		IntervalSeconds:      source.IntervalSeconds,
 		JitterSeconds:        source.JitterSeconds,
@@ -434,6 +551,11 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 	}
 	if err := applyMonitorUpdate(existing, p); err != nil {
 		return nil, err
+	}
+	if p.ClearMonitorGroup || p.MonitorGroupID != nil {
+		if err := s.validateMonitorGroup(ctx, existing.MonitorGroupID); err != nil {
+			return nil, err
+		}
 	}
 
 	newPlainAPIKey, apiKeyUpdated, err := s.applyAPIKeyUpdate(existing, p.APIKey)
@@ -703,11 +825,13 @@ func (s *ChannelMonitorService) runChecksConcurrent(ctx context.Context, m *Chan
 	pingMs := pingEndpointOrigin(ctx, m.Endpoint)
 
 	// 所有模型共用同一份 CheckOptions（来自监控的快照字段）。
+	rt := s.probeRuntime(ctx)
 	opts := &CheckOptions{
-		APIMode:          m.APIMode,
-		ExtraHeaders:     m.ExtraHeaders,
-		BodyOverrideMode: m.BodyOverrideMode,
-		BodyOverride:     m.BodyOverride,
+		APIMode:           m.APIMode,
+		ExtraHeaders:      m.ExtraHeaders,
+		BodyOverrideMode:  m.BodyOverrideMode,
+		BodyOverride:      m.BodyOverride,
+		DegradedThreshold: time.Duration(rt.DegradedThresholdSeconds) * time.Second,
 	}
 
 	var eg errgroup.Group
@@ -942,6 +1066,21 @@ func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) 
 	}
 	if p.GroupName != nil {
 		existing.GroupName = strings.TrimSpace(*p.GroupName)
+	}
+	if p.ClearMonitorGroup {
+		existing.MonitorGroupID = nil
+		existing.MonitorSortOrder = 0
+	} else if p.MonitorGroupID != nil {
+		if *p.MonitorGroupID <= 0 {
+			return ErrChannelMonitorGroupInvalidID
+		}
+		existing.MonitorGroupID = cloneInt64Pointer(p.MonitorGroupID)
+	}
+	if p.MonitorSortOrder != nil {
+		if *p.MonitorSortOrder < 0 {
+			return ErrChannelMonitorGroupInvalidSortOrder
+		}
+		existing.MonitorSortOrder = *p.MonitorSortOrder
 	}
 	if p.Enabled != nil {
 		existing.Enabled = *p.Enabled

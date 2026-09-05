@@ -90,6 +90,21 @@ func Balance(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldBalance, v))
 }
 
+// FreeBalance applies equality check predicate on the "free_balance" field. It's identical to FreeBalanceEQ.
+func FreeBalance(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldFreeBalance, v))
+}
+
+// PaidBalance applies equality check predicate on the "paid_balance" field. It's identical to PaidBalanceEQ.
+func PaidBalance(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPaidBalance, v))
+}
+
+// FreeBalanceIssued applies equality check predicate on the "free_balance_issued" field. It's identical to FreeBalanceIssuedEQ.
+func FreeBalanceIssued(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldFreeBalanceIssued, v))
+}
+
 // FrozenBalance applies equality check predicate on the "frozen_balance" field. It's identical to FrozenBalanceEQ.
 func FrozenBalance(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldFrozenBalance, v))
@@ -543,6 +558,126 @@ func BalanceLT(v float64) predicate.User {
 // BalanceLTE applies the LTE predicate on the "balance" field.
 func BalanceLTE(v float64) predicate.User {
 	return predicate.User(sql.FieldLTE(FieldBalance, v))
+}
+
+// FreeBalanceEQ applies the EQ predicate on the "free_balance" field.
+func FreeBalanceEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldFreeBalance, v))
+}
+
+// FreeBalanceNEQ applies the NEQ predicate on the "free_balance" field.
+func FreeBalanceNEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldFreeBalance, v))
+}
+
+// FreeBalanceIn applies the In predicate on the "free_balance" field.
+func FreeBalanceIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldFreeBalance, vs...))
+}
+
+// FreeBalanceNotIn applies the NotIn predicate on the "free_balance" field.
+func FreeBalanceNotIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldFreeBalance, vs...))
+}
+
+// FreeBalanceGT applies the GT predicate on the "free_balance" field.
+func FreeBalanceGT(v float64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldFreeBalance, v))
+}
+
+// FreeBalanceGTE applies the GTE predicate on the "free_balance" field.
+func FreeBalanceGTE(v float64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldFreeBalance, v))
+}
+
+// FreeBalanceLT applies the LT predicate on the "free_balance" field.
+func FreeBalanceLT(v float64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldFreeBalance, v))
+}
+
+// FreeBalanceLTE applies the LTE predicate on the "free_balance" field.
+func FreeBalanceLTE(v float64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldFreeBalance, v))
+}
+
+// PaidBalanceEQ applies the EQ predicate on the "paid_balance" field.
+func PaidBalanceEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPaidBalance, v))
+}
+
+// PaidBalanceNEQ applies the NEQ predicate on the "paid_balance" field.
+func PaidBalanceNEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPaidBalance, v))
+}
+
+// PaidBalanceIn applies the In predicate on the "paid_balance" field.
+func PaidBalanceIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldPaidBalance, vs...))
+}
+
+// PaidBalanceNotIn applies the NotIn predicate on the "paid_balance" field.
+func PaidBalanceNotIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldPaidBalance, vs...))
+}
+
+// PaidBalanceGT applies the GT predicate on the "paid_balance" field.
+func PaidBalanceGT(v float64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldPaidBalance, v))
+}
+
+// PaidBalanceGTE applies the GTE predicate on the "paid_balance" field.
+func PaidBalanceGTE(v float64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldPaidBalance, v))
+}
+
+// PaidBalanceLT applies the LT predicate on the "paid_balance" field.
+func PaidBalanceLT(v float64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldPaidBalance, v))
+}
+
+// PaidBalanceLTE applies the LTE predicate on the "paid_balance" field.
+func PaidBalanceLTE(v float64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldPaidBalance, v))
+}
+
+// FreeBalanceIssuedEQ applies the EQ predicate on the "free_balance_issued" field.
+func FreeBalanceIssuedEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldFreeBalanceIssued, v))
+}
+
+// FreeBalanceIssuedNEQ applies the NEQ predicate on the "free_balance_issued" field.
+func FreeBalanceIssuedNEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldFreeBalanceIssued, v))
+}
+
+// FreeBalanceIssuedIn applies the In predicate on the "free_balance_issued" field.
+func FreeBalanceIssuedIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldFreeBalanceIssued, vs...))
+}
+
+// FreeBalanceIssuedNotIn applies the NotIn predicate on the "free_balance_issued" field.
+func FreeBalanceIssuedNotIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldFreeBalanceIssued, vs...))
+}
+
+// FreeBalanceIssuedGT applies the GT predicate on the "free_balance_issued" field.
+func FreeBalanceIssuedGT(v float64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldFreeBalanceIssued, v))
+}
+
+// FreeBalanceIssuedGTE applies the GTE predicate on the "free_balance_issued" field.
+func FreeBalanceIssuedGTE(v float64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldFreeBalanceIssued, v))
+}
+
+// FreeBalanceIssuedLT applies the LT predicate on the "free_balance_issued" field.
+func FreeBalanceIssuedLT(v float64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldFreeBalanceIssued, v))
+}
+
+// FreeBalanceIssuedLTE applies the LTE predicate on the "free_balance_issued" field.
+func FreeBalanceIssuedLTE(v float64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldFreeBalanceIssued, v))
 }
 
 // FrozenBalanceEQ applies the EQ predicate on the "frozen_balance" field.

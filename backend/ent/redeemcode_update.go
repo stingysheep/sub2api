@@ -79,6 +79,20 @@ func (_u *RedeemCodeUpdate) AddValue(v float64) *RedeemCodeUpdate {
 	return _u
 }
 
+// SetBalanceSource sets the "balance_source" field.
+func (_u *RedeemCodeUpdate) SetBalanceSource(v string) *RedeemCodeUpdate {
+	_u.mutation.SetBalanceSource(v)
+	return _u
+}
+
+// SetNillableBalanceSource sets the "balance_source" field if the given value is not nil.
+func (_u *RedeemCodeUpdate) SetNillableBalanceSource(v *string) *RedeemCodeUpdate {
+	if v != nil {
+		_u.SetBalanceSource(*v)
+	}
+	return _u
+}
+
 // SetStatus sets the "status" field.
 func (_u *RedeemCodeUpdate) SetStatus(v string) *RedeemCodeUpdate {
 	_u.mutation.SetStatus(v)
@@ -294,6 +308,11 @@ func (_u *RedeemCodeUpdate) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "RedeemCode.type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.BalanceSource(); ok {
+		if err := redeemcode.BalanceSourceValidator(v); err != nil {
+			return &ValidationError{Name: "balance_source", err: fmt.Errorf(`ent: validator failed for field "RedeemCode.balance_source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := redeemcode.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "RedeemCode.status": %w`, err)}
@@ -325,6 +344,9 @@ func (_u *RedeemCodeUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 	}
 	if value, ok := _u.mutation.AddedValue(); ok {
 		_spec.AddField(redeemcode.FieldValue, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.BalanceSource(); ok {
+		_spec.SetField(redeemcode.FieldBalanceSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(redeemcode.FieldStatus, field.TypeString, value)
@@ -477,6 +499,20 @@ func (_u *RedeemCodeUpdateOne) SetNillableValue(v *float64) *RedeemCodeUpdateOne
 // AddValue adds value to the "value" field.
 func (_u *RedeemCodeUpdateOne) AddValue(v float64) *RedeemCodeUpdateOne {
 	_u.mutation.AddValue(v)
+	return _u
+}
+
+// SetBalanceSource sets the "balance_source" field.
+func (_u *RedeemCodeUpdateOne) SetBalanceSource(v string) *RedeemCodeUpdateOne {
+	_u.mutation.SetBalanceSource(v)
+	return _u
+}
+
+// SetNillableBalanceSource sets the "balance_source" field if the given value is not nil.
+func (_u *RedeemCodeUpdateOne) SetNillableBalanceSource(v *string) *RedeemCodeUpdateOne {
+	if v != nil {
+		_u.SetBalanceSource(*v)
+	}
 	return _u
 }
 
@@ -708,6 +744,11 @@ func (_u *RedeemCodeUpdateOne) check() error {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "RedeemCode.type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.BalanceSource(); ok {
+		if err := redeemcode.BalanceSourceValidator(v); err != nil {
+			return &ValidationError{Name: "balance_source", err: fmt.Errorf(`ent: validator failed for field "RedeemCode.balance_source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := redeemcode.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "RedeemCode.status": %w`, err)}
@@ -756,6 +797,9 @@ func (_u *RedeemCodeUpdateOne) sqlSave(ctx context.Context) (_node *RedeemCode, 
 	}
 	if value, ok := _u.mutation.AddedValue(); ok {
 		_spec.AddField(redeemcode.FieldValue, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.BalanceSource(); ok {
+		_spec.SetField(redeemcode.FieldBalanceSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(redeemcode.FieldStatus, field.TypeString, value)

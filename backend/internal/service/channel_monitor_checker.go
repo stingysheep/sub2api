@@ -50,6 +50,8 @@ type CheckOptions struct {
 	// BodyOverride 在 merge 模式下做浅合并（key 命中黑名单时静默丢弃），
 	// 在 replace 模式下直接当作完整 body。
 	BodyOverride map[string]any
+	// DegradedThreshold overrides the code default for this check when positive.
+	DegradedThreshold time.Duration
 }
 
 // runCheckForModel 对单个 (provider, model) 做一次完整检测。
@@ -95,7 +97,7 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 			res.Message = truncateMessage("replace-mode: upstream returned 2xx with empty text")
 			return res
 		}
-		return finalizeOperationalOrDegraded(res, latency, latencyMs)
+		return finalizeOperationalOrDegradedWithThreshold(res, latency, latencyMs, degradedThresholdFromOptions(opts))
 	}
 
 	if !validateChallenge(respText, challenge.Expected) {
@@ -104,12 +106,14 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 		return res
 	}
 
-	return finalizeOperationalOrDegraded(res, latency, latencyMs)
+	return finalizeOperationalOrDegradedWithThreshold(res, latency, latencyMs, degradedThresholdFromOptions(opts))
 }
 
-// finalizeOperationalOrDegraded 负责走到最后一步的 operational/degraded 判定。
-// 拆出来是为了让 runCheckForModel 不超过 30 行。
-func finalizeOperationalOrDegraded(res *CheckResult, latency time.Duration, latencyMs int) *CheckResult {
+func finalizeOperationalOrDegradedWithThreshold(res *CheckResult, latency time.Duration, latencyMs int, threshold time.Duration) *CheckResult {
+	monitorDegradedThreshold := threshold
+	if monitorDegradedThreshold <= 0 {
+		monitorDegradedThreshold = 15 * time.Second
+	}
 	if latency >= monitorDegradedThreshold {
 		res.Status = MonitorStatusDegraded
 		res.Message = truncateMessage(fmt.Sprintf("slow response: %dms", latencyMs))
@@ -117,6 +121,13 @@ func finalizeOperationalOrDegraded(res *CheckResult, latency time.Duration, late
 	}
 	res.Status = MonitorStatusOperational
 	return res
+}
+
+func degradedThresholdFromOptions(opts *CheckOptions) time.Duration {
+	if opts != nil && opts.DegradedThreshold > 0 {
+		return opts.DegradedThreshold
+	}
+	return monitorDegradedThreshold
 }
 
 // bodyOverrideMode 归一取 opts.BodyOverrideMode，nil opts / 空串都视为 off。
@@ -534,6 +545,9 @@ func postRawJSON(ctx context.Context, fullURL string, payload []byte, headers ma
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	// Keep the monitor request alive while the gateway performs account-level
+	// failover. The gateway treats the per-account timeout as a retryable error.
+	req.Header.Set(ChannelMonitorProbeHeader, "1")
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}

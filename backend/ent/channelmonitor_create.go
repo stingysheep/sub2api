@@ -145,6 +145,34 @@ func (_c *ChannelMonitorCreate) SetNillableGroupName(v *string) *ChannelMonitorC
 	return _c
 }
 
+// SetMonitorGroupID sets the "monitor_group_id" field.
+func (_c *ChannelMonitorCreate) SetMonitorGroupID(v int64) *ChannelMonitorCreate {
+	_c.mutation.SetMonitorGroupID(v)
+	return _c
+}
+
+// SetNillableMonitorGroupID sets the "monitor_group_id" field if the given value is not nil.
+func (_c *ChannelMonitorCreate) SetNillableMonitorGroupID(v *int64) *ChannelMonitorCreate {
+	if v != nil {
+		_c.SetMonitorGroupID(*v)
+	}
+	return _c
+}
+
+// SetMonitorSortOrder sets the "monitor_sort_order" field.
+func (_c *ChannelMonitorCreate) SetMonitorSortOrder(v int) *ChannelMonitorCreate {
+	_c.mutation.SetMonitorSortOrder(v)
+	return _c
+}
+
+// SetNillableMonitorSortOrder sets the "monitor_sort_order" field if the given value is not nil.
+func (_c *ChannelMonitorCreate) SetNillableMonitorSortOrder(v *int) *ChannelMonitorCreate {
+	if v != nil {
+		_c.SetMonitorSortOrder(*v)
+	}
+	return _c
+}
+
 // SetEnabled sets the "enabled" field.
 func (_c *ChannelMonitorCreate) SetEnabled(v bool) *ChannelMonitorCreate {
 	_c.mutation.SetEnabled(v)
@@ -347,6 +375,10 @@ func (_c *ChannelMonitorCreate) defaults() {
 		v := channelmonitor.DefaultGroupName
 		_c.mutation.SetGroupName(v)
 	}
+	if _, ok := _c.mutation.MonitorSortOrder(); !ok {
+		v := channelmonitor.DefaultMonitorSortOrder
+		_c.mutation.SetMonitorSortOrder(v)
+	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := channelmonitor.DefaultEnabled
 		_c.mutation.SetEnabled(v)
@@ -436,6 +468,9 @@ func (_c *ChannelMonitorCreate) check() error {
 		if err := channelmonitor.GroupNameValidator(v); err != nil {
 			return &ValidationError{Name: "group_name", err: fmt.Errorf(`ent: validator failed for field "ChannelMonitor.group_name": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.MonitorSortOrder(); !ok {
+		return &ValidationError{Name: "monitor_sort_order", err: errors.New(`ent: missing required field "ChannelMonitor.monitor_sort_order"`)}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "ChannelMonitor.enabled"`)}
@@ -544,6 +579,14 @@ func (_c *ChannelMonitorCreate) createSpec() (*ChannelMonitor, *sqlgraph.CreateS
 	if value, ok := _c.mutation.GroupName(); ok {
 		_spec.SetField(channelmonitor.FieldGroupName, field.TypeString, value)
 		_node.GroupName = value
+	}
+	if value, ok := _c.mutation.MonitorGroupID(); ok {
+		_spec.SetField(channelmonitor.FieldMonitorGroupID, field.TypeInt64, value)
+		_node.MonitorGroupID = &value
+	}
+	if value, ok := _c.mutation.MonitorSortOrder(); ok {
+		_spec.SetField(channelmonitor.FieldMonitorSortOrder, field.TypeInt, value)
+		_node.MonitorSortOrder = value
 	}
 	if value, ok := _c.mutation.Enabled(); ok {
 		_spec.SetField(channelmonitor.FieldEnabled, field.TypeBool, value)
@@ -825,6 +868,48 @@ func (u *ChannelMonitorUpsert) UpdateGroupName() *ChannelMonitorUpsert {
 // ClearGroupName clears the value of the "group_name" field.
 func (u *ChannelMonitorUpsert) ClearGroupName() *ChannelMonitorUpsert {
 	u.SetNull(channelmonitor.FieldGroupName)
+	return u
+}
+
+// SetMonitorGroupID sets the "monitor_group_id" field.
+func (u *ChannelMonitorUpsert) SetMonitorGroupID(v int64) *ChannelMonitorUpsert {
+	u.Set(channelmonitor.FieldMonitorGroupID, v)
+	return u
+}
+
+// UpdateMonitorGroupID sets the "monitor_group_id" field to the value that was provided on create.
+func (u *ChannelMonitorUpsert) UpdateMonitorGroupID() *ChannelMonitorUpsert {
+	u.SetExcluded(channelmonitor.FieldMonitorGroupID)
+	return u
+}
+
+// AddMonitorGroupID adds v to the "monitor_group_id" field.
+func (u *ChannelMonitorUpsert) AddMonitorGroupID(v int64) *ChannelMonitorUpsert {
+	u.Add(channelmonitor.FieldMonitorGroupID, v)
+	return u
+}
+
+// ClearMonitorGroupID clears the value of the "monitor_group_id" field.
+func (u *ChannelMonitorUpsert) ClearMonitorGroupID() *ChannelMonitorUpsert {
+	u.SetNull(channelmonitor.FieldMonitorGroupID)
+	return u
+}
+
+// SetMonitorSortOrder sets the "monitor_sort_order" field.
+func (u *ChannelMonitorUpsert) SetMonitorSortOrder(v int) *ChannelMonitorUpsert {
+	u.Set(channelmonitor.FieldMonitorSortOrder, v)
+	return u
+}
+
+// UpdateMonitorSortOrder sets the "monitor_sort_order" field to the value that was provided on create.
+func (u *ChannelMonitorUpsert) UpdateMonitorSortOrder() *ChannelMonitorUpsert {
+	u.SetExcluded(channelmonitor.FieldMonitorSortOrder)
+	return u
+}
+
+// AddMonitorSortOrder adds v to the "monitor_sort_order" field.
+func (u *ChannelMonitorUpsert) AddMonitorSortOrder(v int) *ChannelMonitorUpsert {
+	u.Add(channelmonitor.FieldMonitorSortOrder, v)
 	return u
 }
 
@@ -1189,6 +1274,55 @@ func (u *ChannelMonitorUpsertOne) UpdateGroupName() *ChannelMonitorUpsertOne {
 func (u *ChannelMonitorUpsertOne) ClearGroupName() *ChannelMonitorUpsertOne {
 	return u.Update(func(s *ChannelMonitorUpsert) {
 		s.ClearGroupName()
+	})
+}
+
+// SetMonitorGroupID sets the "monitor_group_id" field.
+func (u *ChannelMonitorUpsertOne) SetMonitorGroupID(v int64) *ChannelMonitorUpsertOne {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.SetMonitorGroupID(v)
+	})
+}
+
+// AddMonitorGroupID adds v to the "monitor_group_id" field.
+func (u *ChannelMonitorUpsertOne) AddMonitorGroupID(v int64) *ChannelMonitorUpsertOne {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.AddMonitorGroupID(v)
+	})
+}
+
+// UpdateMonitorGroupID sets the "monitor_group_id" field to the value that was provided on create.
+func (u *ChannelMonitorUpsertOne) UpdateMonitorGroupID() *ChannelMonitorUpsertOne {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.UpdateMonitorGroupID()
+	})
+}
+
+// ClearMonitorGroupID clears the value of the "monitor_group_id" field.
+func (u *ChannelMonitorUpsertOne) ClearMonitorGroupID() *ChannelMonitorUpsertOne {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.ClearMonitorGroupID()
+	})
+}
+
+// SetMonitorSortOrder sets the "monitor_sort_order" field.
+func (u *ChannelMonitorUpsertOne) SetMonitorSortOrder(v int) *ChannelMonitorUpsertOne {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.SetMonitorSortOrder(v)
+	})
+}
+
+// AddMonitorSortOrder adds v to the "monitor_sort_order" field.
+func (u *ChannelMonitorUpsertOne) AddMonitorSortOrder(v int) *ChannelMonitorUpsertOne {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.AddMonitorSortOrder(v)
+	})
+}
+
+// UpdateMonitorSortOrder sets the "monitor_sort_order" field to the value that was provided on create.
+func (u *ChannelMonitorUpsertOne) UpdateMonitorSortOrder() *ChannelMonitorUpsertOne {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.UpdateMonitorSortOrder()
 	})
 }
 
@@ -1743,6 +1877,55 @@ func (u *ChannelMonitorUpsertBulk) UpdateGroupName() *ChannelMonitorUpsertBulk {
 func (u *ChannelMonitorUpsertBulk) ClearGroupName() *ChannelMonitorUpsertBulk {
 	return u.Update(func(s *ChannelMonitorUpsert) {
 		s.ClearGroupName()
+	})
+}
+
+// SetMonitorGroupID sets the "monitor_group_id" field.
+func (u *ChannelMonitorUpsertBulk) SetMonitorGroupID(v int64) *ChannelMonitorUpsertBulk {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.SetMonitorGroupID(v)
+	})
+}
+
+// AddMonitorGroupID adds v to the "monitor_group_id" field.
+func (u *ChannelMonitorUpsertBulk) AddMonitorGroupID(v int64) *ChannelMonitorUpsertBulk {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.AddMonitorGroupID(v)
+	})
+}
+
+// UpdateMonitorGroupID sets the "monitor_group_id" field to the value that was provided on create.
+func (u *ChannelMonitorUpsertBulk) UpdateMonitorGroupID() *ChannelMonitorUpsertBulk {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.UpdateMonitorGroupID()
+	})
+}
+
+// ClearMonitorGroupID clears the value of the "monitor_group_id" field.
+func (u *ChannelMonitorUpsertBulk) ClearMonitorGroupID() *ChannelMonitorUpsertBulk {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.ClearMonitorGroupID()
+	})
+}
+
+// SetMonitorSortOrder sets the "monitor_sort_order" field.
+func (u *ChannelMonitorUpsertBulk) SetMonitorSortOrder(v int) *ChannelMonitorUpsertBulk {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.SetMonitorSortOrder(v)
+	})
+}
+
+// AddMonitorSortOrder adds v to the "monitor_sort_order" field.
+func (u *ChannelMonitorUpsertBulk) AddMonitorSortOrder(v int) *ChannelMonitorUpsertBulk {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.AddMonitorSortOrder(v)
+	})
+}
+
+// UpdateMonitorSortOrder sets the "monitor_sort_order" field to the value that was provided on create.
+func (u *ChannelMonitorUpsertBulk) UpdateMonitorSortOrder() *ChannelMonitorUpsertBulk {
+	return u.Update(func(s *ChannelMonitorUpsert) {
+		s.UpdateMonitorSortOrder()
 	})
 }
 

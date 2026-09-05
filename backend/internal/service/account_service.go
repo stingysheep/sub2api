@@ -126,6 +126,15 @@ type AccountRepository interface {
 	ListShadowsByParent(ctx context.Context, parentID int64) ([]*Account, error)
 }
 
+// AccountGroupPriorityRepository owns mutations to the account/group edge.
+// It is intentionally separate from AccountRepository so read-only account
+// repository test doubles do not need to implement the admin-only mutation.
+type AccountGroupPriorityRepository interface {
+	AddToGroup(ctx context.Context, accountID, groupID int64, priority int) error
+	RemoveFromGroup(ctx context.Context, accountID, groupID int64) error
+	UpdateGroupPriority(ctx context.Context, accountID, groupID int64, priority int) error
+}
+
 type AccountDuplicateRepository interface {
 	// CreateWithAccountGroups atomically persists an account, its exact group priorities,
 	// and the scheduler outbox event for the new routing snapshot.

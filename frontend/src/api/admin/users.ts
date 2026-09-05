@@ -55,6 +55,20 @@ export interface BatchUpdateUserLimitsResponse {
   affected: number
 }
 
+export interface PaidBalanceRankingItem {
+  rank: number
+  user_id: number
+  email: string
+  username: string
+  paid_balance: number
+}
+
+export interface PaidBalanceSummaryResponse {
+  total_paid_balance: number
+  users_with_paid_balance: number
+  ranking: PaidBalanceRankingItem[]
+}
+
 /**
  * List all users with pagination
  * @param page - Page number (default: 1)
@@ -107,6 +121,11 @@ export async function list(
     params,
     signal: options?.signal
   })
+  return data
+}
+
+export async function getPaidBalanceSummary(): Promise<PaidBalanceSummaryResponse> {
+  const { data } = await apiClient.get<PaidBalanceSummaryResponse>('/admin/users/paid-balance-summary')
   return data
 }
 
@@ -175,12 +194,14 @@ export async function updateBalance(
   id: number,
   balance: number,
   operation: 'set' | 'add' | 'subtract' = 'set',
-  notes?: string
+  notes?: string,
+  source: 'free' | 'paid' = 'free'
 ): Promise<AdminUser> {
   const { data } = await apiClient.post<AdminUser>(`/admin/users/${id}/balance`, {
     balance,
     operation,
-    notes: notes || ''
+    notes: notes || '',
+    source
   })
   return data
 }
@@ -258,6 +279,7 @@ export interface BalanceHistoryItem {
   code: string
   type: string
   value: number
+  balance_source: 'free' | 'paid'
   status: string
   used_by: number | null
   used_at: string | null
@@ -401,6 +423,7 @@ export async function resetPlatformQuotaWindow(
 
 export const usersAPI = {
   list,
+  getPaidBalanceSummary,
   getById,
   create,
   update,

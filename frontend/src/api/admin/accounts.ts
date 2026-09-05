@@ -238,6 +238,32 @@ export async function update(id: number, updates: UpdateAccountRequest): Promise
   return data
 }
 
+export async function addToGroup(accountID: number, groupID: number): Promise<{
+  account_id: number
+  group_id: number
+  priority: number
+}> {
+  const { data } = await apiClient.post(`/admin/accounts/${accountID}/groups/${groupID}`)
+  return data
+}
+
+export async function updateGroupPriority(
+  accountID: number,
+  groupID: number,
+  priority: number,
+): Promise<{ account_id: number; group_id: number; priority: number }> {
+  const { data } = await apiClient.put(`/admin/accounts/${accountID}/groups/${groupID}/priority`, { priority })
+  return data
+}
+
+export async function removeFromGroup(accountID: number, groupID: number): Promise<{
+  account_id: number
+  group_id: number
+}> {
+  const { data } = await apiClient.delete(`/admin/accounts/${accountID}/groups/${groupID}`)
+  return data
+}
+
 /**
  * Check mixed-channel risk for account-group binding.
  */
@@ -283,6 +309,41 @@ export async function testAccount(id: number): Promise<{
     message: string
     latency_ms?: number
   }>(`/admin/accounts/${id}/test`)
+  return data
+}
+
+export interface BatchAccountTestResult {
+  account_id: number
+  model_id?: string
+  result?: {
+    status: string
+    response_text?: string
+    error_message?: string
+    latency_ms?: number
+  }
+  error?: string
+}
+
+export async function batchTest(accountIds: number[]): Promise<{ results: BatchAccountTestResult[] }> {
+  const { data } = await apiClient.post<{ results: BatchAccountTestResult[] }>('/admin/accounts/batch-test', {
+    account_ids: accountIds
+  })
+  return data
+}
+
+export interface BatchSyncUpstreamModelsResult {
+  account_id: number
+  success: boolean
+  models: string[]
+  error?: string
+}
+
+export async function batchSyncUpstreamModels(accountIds: number[]): Promise<{ results: BatchSyncUpstreamModelsResult[] }> {
+  const { data } = await apiClient.post<{ results: BatchSyncUpstreamModelsResult[] }>(
+    '/admin/accounts/batch-sync-upstream-models',
+    { account_ids: accountIds },
+    { timeout: 300000 }
+  )
   return data
 }
 
@@ -1054,10 +1115,15 @@ export const accountsAPI = {
   create,
   duplicate,
   update,
+  addToGroup,
+  removeFromGroup,
+  updateGroupPriority,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,
   testAccount,
+  batchTest,
+  batchSyncUpstreamModels,
   refreshCredentials,
   applyOAuthCredentials,
   getStats,

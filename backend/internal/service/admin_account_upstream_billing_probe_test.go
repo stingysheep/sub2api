@@ -112,7 +112,7 @@ func TestUpdateAccountRoutesRateIntentThroughAtomicBillingUpdater(t *testing.T) 
 	require.Zero(t, *updated.RateMultiplier)
 }
 
-func TestCreateAccountDropsManagedUpstreamBillingProbeState(t *testing.T) {
+func TestCreateAccountDefaultsManagedUpstreamBillingProbeState(t *testing.T) {
 	repo := &upstreamBillingProbeAccountRepo{}
 	svc := &adminServiceImpl{accountRepo: repo}
 
@@ -130,9 +130,26 @@ func TestCreateAccountDropsManagedUpstreamBillingProbeState(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.NotContains(t, created.Extra, UpstreamBillingProbeEnabledExtraKey)
-	require.NotContains(t, created.Extra, UpstreamBillingRateSyncEnabledExtraKey)
+	require.Equal(t, true, created.Extra[UpstreamBillingProbeEnabledExtraKey])
+	require.Equal(t, true, created.Extra[UpstreamBillingRateSyncEnabledExtraKey])
 	require.NotContains(t, created.Extra, UpstreamBillingProbeExtraKey)
+}
+
+func TestCreateAccountCanExplicitlyDisableUpstreamBillingProbeAndSync(t *testing.T) {
+	disabled := false
+	repo := &upstreamBillingProbeAccountRepo{}
+	created, err := (&adminServiceImpl{accountRepo: repo}).CreateAccount(context.Background(), &CreateAccountInput{
+		Name:                 "upstream-disabled",
+		Platform:             PlatformOpenAI,
+		Type:                 AccountTypeAPIKey,
+		Credentials:          map[string]any{"api_key": "sk-test"},
+		ProbeEnabled:         &disabled,
+		SkipDefaultGroupBind: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, false, created.Extra[UpstreamBillingProbeEnabledExtraKey])
+	require.Equal(t, false, created.Extra[UpstreamBillingRateSyncEnabledExtraKey])
 }
 
 func TestCreateAccountAcceptsDedicatedUpstreamBillingProbeSetting(t *testing.T) {

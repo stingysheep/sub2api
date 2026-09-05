@@ -158,6 +158,9 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
 	}
+	if _, err := txClient.ExecContext(txCtx, `UPDATE users SET free_balance = balance, paid_balance = 0, free_balance_issued = balance WHERE id = $1`, created.ID); err != nil {
+		return err
+	}
 
 	if err := r.syncUserAllowedGroupsWithClient(txCtx, txClient, created.ID, userIn.AllowedGroups); err != nil {
 		return err
@@ -828,20 +831,91 @@ func (r *userRepository) filterUsersByAttributes(ctx context.Context, attrs map[
 }
 
 func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount float64) error {
-	client := clientFromContext(ctx, r.client)
-	update := client.User.Update().Where(dbuser.IDEQ(id)).AddBalance(amount)
-	// Track cumulative recharge amount for percentage-based notifications
-	if amount > 0 {
-		update = update.AddTotalRecharged(amount)
+	_, err := r.adjustBalanceBySource(ctx, id, amount, service.BalanceSourceFromContext(ctx), false)
+	return err
+}
+
+func (r *userRepository) AdjustBalanceBySource(ctx context.Context, id int64, delta float64, source service.BalanceSource) (service.BalanceChange, error) {
+	return r.adjustBalanceBySource(ctx, id, delta, source, true)
+}
+
+func (r *userRepository) SetBalanceBySource(ctx context.Context, id int64, value float64, source service.BalanceSource) (service.BalanceChange, error) {
+	if value < 0 {
+		current, err := r.currentBalance(ctx, id)
+		if err != nil {
+			return service.BalanceChange{}, err
+		}
+		return service.BalanceChange{Old: current, New: value}, service.ErrBalanceNegative
 	}
-	n, err := update.Save(ctx)
+	return r.setBalanceBySource(ctx, id, value, source)
+}
+
+func (r *userRepository) setBalanceBySource(ctx context.Context, id int64, value float64, source service.BalanceSource) (service.BalanceChange, error) {
+	freeValue, paidValue := value, 0.0
+	if source == service.BalanceSourcePaid {
+		freeValue, paidValue = 0, value
+	}
+	const query = `
+		UPDATE users AS u
+		SET balance = $1, free_balance = $2, paid_balance = $3,
+		    free_balance_issued = CASE WHEN $5 = 'free' THEN $1 ELSE 0 END,
+		    updated_at = NOW()
+		FROM (SELECT id, balance FROM users WHERE id = $4 AND deleted_at IS NULL) AS prev
+		WHERE u.id = prev.id AND u.deleted_at IS NULL
+		RETURNING prev.balance, u.balance
+	`
+	change, ok, err := scanBalanceChange(ctx, clientFromContext(ctx, r.client), query, value, freeValue, paidValue, id, string(source))
 	if err != nil {
-		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+		return service.BalanceChange{}, err
 	}
-	if n == 0 {
-		return service.ErrUserNotFound
+	if !ok {
+		return service.BalanceChange{}, service.ErrUserNotFound
 	}
-	return nil
+	return change, nil
+}
+
+func (r *userRepository) adjustBalanceBySource(ctx context.Context, id int64, delta float64, source service.BalanceSource, rejectNegative bool) (service.BalanceChange, error) {
+	paidCredit := 0.0
+	freeCredit := 0.0
+	if delta > 0 && source == service.BalanceSourcePaid {
+		paidCredit = delta
+	} else if delta > 0 {
+		freeCredit = delta
+	}
+	query := `
+		WITH target AS (
+			SELECT id, balance, COALESCE(free_balance, 0) AS free_balance,
+			       COALESCE(paid_balance, 0) AS paid_balance
+			FROM users WHERE id = $2 AND deleted_at IS NULL FOR UPDATE
+		), updated AS (
+			UPDATE users AS u
+			SET balance = target.balance + $1,
+			    free_balance = CASE WHEN $1 >= 0 THEN target.free_balance + $3
+			        ELSE GREATEST(target.free_balance + $1, 0) END,
+			    paid_balance = CASE WHEN $1 >= 0 THEN target.paid_balance + $4
+			        ELSE target.paid_balance - GREATEST(-$1 - target.free_balance, 0) END,
+			    total_recharged = u.total_recharged + CASE WHEN $1 > 0 THEN $1 ELSE 0 END,
+			    free_balance_issued = u.free_balance_issued + CASE WHEN $1 > 0 AND $3 > 0 THEN $1 ELSE 0 END,
+			    updated_at = NOW()
+			FROM target
+			WHERE u.id = target.id AND u.deleted_at IS NULL
+			  AND (NOT $5 OR target.balance + $1 >= 0)
+			RETURNING target.balance, u.balance
+		)
+		SELECT * FROM updated
+	`
+	change, ok, err := scanBalanceChange(ctx, clientFromContext(ctx, r.client), query, delta, id, freeCredit, paidCredit, rejectNegative)
+	if err != nil {
+		return service.BalanceChange{}, err
+	}
+	if ok {
+		return change, nil
+	}
+	current, err := r.currentBalance(ctx, id)
+	if err != nil {
+		return service.BalanceChange{}, err
+	}
+	return service.BalanceChange{Old: current, New: current + delta}, service.ErrBalanceNegative
 }
 
 func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id int64, delta float64) error {
@@ -941,26 +1015,7 @@ func (r *userRepository) DeductAvailableBalance(ctx context.Context, id int64, a
 // 相比"读余额 → 算新值 → 整行写回"，这里把读与写压进同一条 UPDATE，
 // 并发的计费扣款不会被旧快照覆盖。
 func (r *userRepository) AdjustBalance(ctx context.Context, id int64, delta float64) (service.BalanceChange, error) {
-	const updateSQL = `
-		UPDATE users
-		SET balance = balance + $1, updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL AND balance + $1 >= 0
-		RETURNING balance - $1, balance
-	`
-	change, ok, err := scanBalanceChange(ctx, clientFromContext(ctx, r.client), updateSQL, delta, id)
-	if err != nil {
-		return service.BalanceChange{}, err
-	}
-	if ok {
-		return change, nil
-	}
-
-	// 0 行既可能是用户不存在，也可能是余额不足以承受这次扣减，需要区分。
-	current, err := r.currentBalance(ctx, id)
-	if err != nil {
-		return service.BalanceChange{}, err
-	}
-	return service.BalanceChange{Old: current, New: current + delta}, service.ErrBalanceNegative
+	return r.adjustBalanceBySource(ctx, id, delta, service.BalanceSourceFree, true)
 }
 
 // SetBalance 原子地把余额置为 value，并返回变更前后的值。
@@ -975,7 +1030,7 @@ func (r *userRepository) SetBalance(ctx context.Context, id int64, value float64
 	}
 	const updateSQL = `
 		UPDATE users AS u
-		SET balance = $1, updated_at = NOW()
+		SET balance = $1, free_balance = $1, paid_balance = 0, free_balance_issued = $1, updated_at = NOW()
 		FROM (SELECT id, balance FROM users WHERE id = $2 AND deleted_at IS NULL) AS prev
 		WHERE u.id = prev.id AND u.deleted_at IS NULL
 		RETURNING prev.balance, u.balance

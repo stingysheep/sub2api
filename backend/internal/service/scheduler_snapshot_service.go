@@ -325,6 +325,28 @@ func (s *SchedulerSnapshotService) UpdateAccountInCache(ctx context.Context, acc
 	return s.cache.SetAccount(ctx, account)
 }
 
+// RefreshRecoveredAccount republishes the small set of scheduler buckets that
+// contain an account which has become schedulable again after a temporary
+// quarantine. A quarantine expiry does not emit a database/outbox event, so
+// without this targeted refresh the account can remain absent from snapshots
+// indefinitely even though GetByID reports it healthy.
+func (s *SchedulerSnapshotService) RefreshRecoveredAccount(ctx context.Context, accountID int64) error {
+	if s == nil || s.accountRepo == nil || accountID <= 0 {
+		return nil
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil || account == nil {
+		return err
+	}
+	if s.cache == nil {
+		return nil
+	}
+	if err := s.cache.SetAccount(ctx, account); err != nil {
+		return err
+	}
+	return s.rebuildByAccount(ctx, account, account.GroupIDs, "account_recovered", nil)
+}
+
 func (s *SchedulerSnapshotService) runInitialRebuild() {
 	if s.cache == nil {
 		return

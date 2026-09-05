@@ -445,6 +445,66 @@ func (r *usageLogRepository) GetGeminiUsageTotalsBatch(ctx context.Context, acco
 // UsageStats represents usage statistics
 type UsageStats = usagestats.UsageStats
 
+func (r *usageLogRepository) GetProfitBreakdown(ctx context.Context, startTime, endTime time.Time) (*usagestats.ProfitBreakdown, error) {
+	cte := `
+WITH scoped AS (
+ SELECT ul.group_id, COALESCE(g.name, '未分组') AS group_name,
+        ` + resolveModelDimensionExpressionWithAlias(usagestats.ModelSourceRequested, "ul") + ` AS model,
+        COALESCE(uba.paid_cost, 0)::double precision AS paid_revenue,
+        COALESCE(uba.free_cost, 0) + COALESCE(uba.unfunded_cost, 0) AS free_charged,
+        COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(a.rate_multiplier, 1) AS upstream_cost,
+        ul.actual_cost
+ FROM usage_logs ul
+ JOIN users u ON u.id = ul.user_id AND u.role = 'user' AND u.deleted_at IS NULL
+ LEFT JOIN groups g ON g.id = ul.group_id
+ LEFT JOIN accounts a ON a.id = ul.account_id
+ LEFT JOIN usage_balance_allocations uba ON uba.request_id = ul.request_id AND uba.api_key_id = ul.api_key_id
+ WHERE ul.created_at >= $1 AND ul.created_at < $2 AND ul.billing_type = 0 AND ul.actual_cost > 0
+)
+`
+	groupQuery := cte + `
+SELECT COALESCE(group_id, 0), group_name, COUNT(*),
+       COALESCE(SUM(paid_revenue), 0),
+       COALESCE(SUM(upstream_cost), 0),
+       COALESCE(SUM(upstream_cost * free_charged / NULLIF(actual_cost, 0)), 0),
+       COALESCE(SUM(upstream_cost * paid_revenue / NULLIF(actual_cost, 0)), 0),
+       COALESCE(SUM(paid_revenue - upstream_cost), 0)
+FROM scoped GROUP BY group_id, group_name ORDER BY 8 DESC, 3 DESC`
+	modelQuery := cte + `
+SELECT 0, model, COUNT(*),
+       COALESCE(SUM(paid_revenue), 0),
+       COALESCE(SUM(upstream_cost), 0),
+       COALESCE(SUM(upstream_cost * free_charged / NULLIF(actual_cost, 0)), 0),
+       COALESCE(SUM(upstream_cost * paid_revenue / NULLIF(actual_cost, 0)), 0),
+       COALESCE(SUM(paid_revenue - upstream_cost), 0)
+FROM scoped GROUP BY model ORDER BY 8 DESC, 3 DESC`
+	read := func(query string) ([]usagestats.ProfitBreakdownItem, error) {
+		rows, err := r.sql.QueryContext(ctx, query, startTime, endTime)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		items := make([]usagestats.ProfitBreakdownItem, 0)
+		for rows.Next() {
+			var item usagestats.ProfitBreakdownItem
+			if err := rows.Scan(&item.GroupID, &item.GroupName, &item.Requests, &item.PaidRevenue, &item.UpstreamCost, &item.FreeUpstreamCost, &item.PaidUpstreamCost, &item.Profit); err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		return items, rows.Err()
+	}
+	groups, err := read(groupQuery)
+	if err != nil {
+		return nil, err
+	}
+	models, err := read(modelQuery)
+	if err != nil {
+		return nil, err
+	}
+	return &usagestats.ProfitBreakdown{Groups: groups, Models: models}, nil
+}
+
 // BatchUserUsageStats represents usage stats for a single user
 type BatchUserUsageStats = usagestats.BatchUserUsageStats
 
@@ -658,6 +718,7 @@ func (r *usageLogRepository) GetGlobalStats(ctx context.Context, startTime, endT
 func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters UsageLogFilters) (*UsageStats, error) {
 	conditions := make([]string, 0, 9)
 	args := make([]any, 0, 9)
+	conditions, args = appendUsageLogUserRoleWhereCondition(conditions, args, filters.UserRole, "user_id")
 
 	if filters.UserID > 0 {
 		conditions = append(conditions, fmt.Sprintf("user_id = $%d", len(args)+1))
@@ -695,6 +756,14 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 		args = append(args, *filters.EndTime)
 	}
 
+	accountCostExpression := "COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)"
+	if filters.AccountCostBasis == "current_account_rate" {
+		// Historical logs created before account-rate snapshots were reliable often
+		// contain 1.0. Profit estimates intentionally recalculate with the account's
+		// current configured multiplier without mutating immutable usage logs.
+		accountCostExpression = "COALESCE(account_stats_cost, total_cost) * COALESCE((SELECT rate_multiplier FROM accounts WHERE accounts.id = usage_logs.account_id), 1)"
+	}
+
 	query := fmt.Sprintf(`
 		WITH scoped AS (
 			SELECT
@@ -706,7 +775,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 				cache_read_tokens,
 				total_cost,
 				actual_cost,
-				COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1) AS account_cost,
+				%s AS account_cost,
 				duration_ms
 			FROM usage_logs
 			%s
@@ -732,7 +801,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 			(upstream_endpoint),
 			(inbound_endpoint, upstream_endpoint)
 		)
-	`, buildWhere(conditions))
+	`, accountCostExpression, buildWhere(conditions))
 
 	stats := &UsageStats{}
 	var totalAccountCost float64
@@ -821,6 +890,78 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 
 	stats.TotalAccountCost = &totalAccountCost
 	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheTokens
+	// Balance-source attribution is stored separately from immutable usage logs.
+	// Keep it as a second aggregate so existing dashboard/grouping SQL and its
+	// consumers remain backward compatible.
+	if filters.AccountCostBasis != "current_account_rate" {
+		return stats, nil
+	}
+	allocConditions := []string{"1 = 1"}
+	allocArgs := make([]any, 0, 8)
+	if filters.UserID > 0 {
+		allocConditions = append(allocConditions, fmt.Sprintf("uba.user_id = $%d", len(allocArgs)+1))
+		allocArgs = append(allocArgs, filters.UserID)
+	}
+	if filters.APIKeyID > 0 {
+		allocConditions = append(allocConditions, fmt.Sprintf("uba.api_key_id = $%d", len(allocArgs)+1))
+		allocArgs = append(allocArgs, filters.APIKeyID)
+	}
+	if filters.StartTime != nil {
+		allocConditions = append(allocConditions, fmt.Sprintf("uba.created_at >= $%d", len(allocArgs)+1))
+		allocArgs = append(allocArgs, *filters.StartTime)
+	}
+	if filters.EndTime != nil {
+		allocConditions = append(allocConditions, fmt.Sprintf("uba.created_at < $%d", len(allocArgs)+1))
+		allocArgs = append(allocArgs, *filters.EndTime)
+	}
+	allocationRole := filters.UserRole
+	if allocationRole == "" {
+		allocationRole = "user"
+	}
+	allocConditions = append(allocConditions, fmt.Sprintf("EXISTS (SELECT 1 FROM users au WHERE au.id = uba.user_id AND au.role = $%d AND au.deleted_at IS NULL)", len(allocArgs)+1))
+	allocArgs = append(allocArgs, allocationRole)
+	allocQuery := fmt.Sprintf(`
+		SELECT
+			COALESCE(SUM(uba.free_cost), 0),
+			COALESCE(SUM(uba.paid_cost), 0),
+			COALESCE(SUM(uba.unfunded_cost), 0),
+			COALESCE(SUM(
+				COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(a.rate_multiplier, 1)
+				* (uba.free_cost + uba.unfunded_cost) / NULLIF(ul.actual_cost, 0)
+			), 0),
+			COALESCE(SUM(
+				COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(a.rate_multiplier, 1)
+				* uba.paid_cost / NULLIF(ul.actual_cost, 0)
+			), 0)
+		FROM usage_balance_allocations uba
+		JOIN usage_logs ul ON ul.request_id = uba.request_id AND ul.api_key_id = uba.api_key_id
+		LEFT JOIN accounts a ON a.id = ul.account_id
+		WHERE %s`, strings.Join(allocConditions, " AND "))
+	if err := scanSingleRow(ctx, r.sql, allocQuery, allocArgs,
+		&stats.TotalFreeBalanceCost, &stats.TotalPaidBalanceCost, &stats.TotalUnfundedCost,
+		&stats.TotalFreeUpstreamCost, &stats.TotalPaidUpstreamCost,
+	); err != nil {
+		// The migration is applied before the service starts. Keep old databases
+		// readable during rolling upgrades when the new table is not present yet.
+		if !strings.Contains(strings.ToLower(err.Error()), "does not exist") {
+			return nil, err
+		}
+	}
+	issuedQuery := `
+		SELECT
+			COALESCE(SUM(free_balance_issued), 0),
+			COALESCE((
+				SELECT SUM(uba.free_cost + uba.unfunded_cost)
+				FROM usage_balance_allocations uba
+				JOIN users au ON au.id = uba.user_id AND au.deleted_at IS NULL AND au.role = 'user'
+			), 0)
+		FROM users
+		WHERE deleted_at IS NULL AND role = 'user'`
+	if err := scanSingleRow(ctx, r.sql, issuedQuery, nil, &stats.TotalFreeBalanceIssued, &stats.TotalFreeBalanceConsumed); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "does not exist") {
+			return nil, err
+		}
+	}
 
 	return stats, nil
 }

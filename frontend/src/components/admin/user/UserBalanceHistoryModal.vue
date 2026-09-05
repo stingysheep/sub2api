@@ -112,6 +112,12 @@
                 <p class="text-sm font-medium text-gray-900 dark:text-white">
                   {{ getItemTitle(item) }}
                 </p>
+                <p
+                  v-if="item.type === 'balance' || item.type === 'admin_balance'"
+                  class="mt-0.5 text-xs text-gray-500 dark:text-dark-400"
+                >
+                  {{ item.balance_source === 'paid' ? t('admin.redeem.paidBalance') : t('admin.redeem.freeBalance') }}
+                </p>
                 <!-- Notes (admin adjustment reason) -->
                 <p
                   v-if="item.notes"

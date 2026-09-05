@@ -116,6 +116,48 @@ func (_c *UserCreate) SetNillableBalance(v *float64) *UserCreate {
 	return _c
 }
 
+// SetFreeBalance sets the "free_balance" field.
+func (_c *UserCreate) SetFreeBalance(v float64) *UserCreate {
+	_c.mutation.SetFreeBalance(v)
+	return _c
+}
+
+// SetNillableFreeBalance sets the "free_balance" field if the given value is not nil.
+func (_c *UserCreate) SetNillableFreeBalance(v *float64) *UserCreate {
+	if v != nil {
+		_c.SetFreeBalance(*v)
+	}
+	return _c
+}
+
+// SetPaidBalance sets the "paid_balance" field.
+func (_c *UserCreate) SetPaidBalance(v float64) *UserCreate {
+	_c.mutation.SetPaidBalance(v)
+	return _c
+}
+
+// SetNillablePaidBalance sets the "paid_balance" field if the given value is not nil.
+func (_c *UserCreate) SetNillablePaidBalance(v *float64) *UserCreate {
+	if v != nil {
+		_c.SetPaidBalance(*v)
+	}
+	return _c
+}
+
+// SetFreeBalanceIssued sets the "free_balance_issued" field.
+func (_c *UserCreate) SetFreeBalanceIssued(v float64) *UserCreate {
+	_c.mutation.SetFreeBalanceIssued(v)
+	return _c
+}
+
+// SetNillableFreeBalanceIssued sets the "free_balance_issued" field if the given value is not nil.
+func (_c *UserCreate) SetNillableFreeBalanceIssued(v *float64) *UserCreate {
+	if v != nil {
+		_c.SetFreeBalanceIssued(*v)
+	}
+	return _c
+}
+
 // SetFrozenBalance sets the "frozen_balance" field.
 func (_c *UserCreate) SetFrozenBalance(v float64) *UserCreate {
 	_c.mutation.SetFrozenBalance(v)
@@ -622,6 +664,18 @@ func (_c *UserCreate) defaults() error {
 		v := user.DefaultBalance
 		_c.mutation.SetBalance(v)
 	}
+	if _, ok := _c.mutation.FreeBalance(); !ok {
+		v := user.DefaultFreeBalance
+		_c.mutation.SetFreeBalance(v)
+	}
+	if _, ok := _c.mutation.PaidBalance(); !ok {
+		v := user.DefaultPaidBalance
+		_c.mutation.SetPaidBalance(v)
+	}
+	if _, ok := _c.mutation.FreeBalanceIssued(); !ok {
+		v := user.DefaultFreeBalanceIssued
+		_c.mutation.SetFreeBalanceIssued(v)
+	}
 	if _, ok := _c.mutation.FrozenBalance(); !ok {
 		v := user.DefaultFrozenBalance
 		_c.mutation.SetFrozenBalance(v)
@@ -711,6 +765,15 @@ func (_c *UserCreate) check() error {
 	}
 	if _, ok := _c.mutation.Balance(); !ok {
 		return &ValidationError{Name: "balance", err: errors.New(`ent: missing required field "User.balance"`)}
+	}
+	if _, ok := _c.mutation.FreeBalance(); !ok {
+		return &ValidationError{Name: "free_balance", err: errors.New(`ent: missing required field "User.free_balance"`)}
+	}
+	if _, ok := _c.mutation.PaidBalance(); !ok {
+		return &ValidationError{Name: "paid_balance", err: errors.New(`ent: missing required field "User.paid_balance"`)}
+	}
+	if _, ok := _c.mutation.FreeBalanceIssued(); !ok {
+		return &ValidationError{Name: "free_balance_issued", err: errors.New(`ent: missing required field "User.free_balance_issued"`)}
 	}
 	if _, ok := _c.mutation.FrozenBalance(); !ok {
 		return &ValidationError{Name: "frozen_balance", err: errors.New(`ent: missing required field "User.frozen_balance"`)}
@@ -820,6 +883,18 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Balance(); ok {
 		_spec.SetField(user.FieldBalance, field.TypeFloat64, value)
 		_node.Balance = value
+	}
+	if value, ok := _c.mutation.FreeBalance(); ok {
+		_spec.SetField(user.FieldFreeBalance, field.TypeFloat64, value)
+		_node.FreeBalance = value
+	}
+	if value, ok := _c.mutation.PaidBalance(); ok {
+		_spec.SetField(user.FieldPaidBalance, field.TypeFloat64, value)
+		_node.PaidBalance = value
+	}
+	if value, ok := _c.mutation.FreeBalanceIssued(); ok {
+		_spec.SetField(user.FieldFreeBalanceIssued, field.TypeFloat64, value)
+		_node.FreeBalanceIssued = value
 	}
 	if value, ok := _c.mutation.FrozenBalance(); ok {
 		_spec.SetField(user.FieldFrozenBalance, field.TypeFloat64, value)
@@ -1241,6 +1316,60 @@ func (u *UserUpsert) AddBalance(v float64) *UserUpsert {
 	return u
 }
 
+// SetFreeBalance sets the "free_balance" field.
+func (u *UserUpsert) SetFreeBalance(v float64) *UserUpsert {
+	u.Set(user.FieldFreeBalance, v)
+	return u
+}
+
+// UpdateFreeBalance sets the "free_balance" field to the value that was provided on create.
+func (u *UserUpsert) UpdateFreeBalance() *UserUpsert {
+	u.SetExcluded(user.FieldFreeBalance)
+	return u
+}
+
+// AddFreeBalance adds v to the "free_balance" field.
+func (u *UserUpsert) AddFreeBalance(v float64) *UserUpsert {
+	u.Add(user.FieldFreeBalance, v)
+	return u
+}
+
+// SetPaidBalance sets the "paid_balance" field.
+func (u *UserUpsert) SetPaidBalance(v float64) *UserUpsert {
+	u.Set(user.FieldPaidBalance, v)
+	return u
+}
+
+// UpdatePaidBalance sets the "paid_balance" field to the value that was provided on create.
+func (u *UserUpsert) UpdatePaidBalance() *UserUpsert {
+	u.SetExcluded(user.FieldPaidBalance)
+	return u
+}
+
+// AddPaidBalance adds v to the "paid_balance" field.
+func (u *UserUpsert) AddPaidBalance(v float64) *UserUpsert {
+	u.Add(user.FieldPaidBalance, v)
+	return u
+}
+
+// SetFreeBalanceIssued sets the "free_balance_issued" field.
+func (u *UserUpsert) SetFreeBalanceIssued(v float64) *UserUpsert {
+	u.Set(user.FieldFreeBalanceIssued, v)
+	return u
+}
+
+// UpdateFreeBalanceIssued sets the "free_balance_issued" field to the value that was provided on create.
+func (u *UserUpsert) UpdateFreeBalanceIssued() *UserUpsert {
+	u.SetExcluded(user.FieldFreeBalanceIssued)
+	return u
+}
+
+// AddFreeBalanceIssued adds v to the "free_balance_issued" field.
+func (u *UserUpsert) AddFreeBalanceIssued(v float64) *UserUpsert {
+	u.Add(user.FieldFreeBalanceIssued, v)
+	return u
+}
+
 // SetFrozenBalance sets the "frozen_balance" field.
 func (u *UserUpsert) SetFrozenBalance(v float64) *UserUpsert {
 	u.Set(user.FieldFrozenBalance, v)
@@ -1657,6 +1786,69 @@ func (u *UserUpsertOne) AddBalance(v float64) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateBalance() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateBalance()
+	})
+}
+
+// SetFreeBalance sets the "free_balance" field.
+func (u *UserUpsertOne) SetFreeBalance(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetFreeBalance(v)
+	})
+}
+
+// AddFreeBalance adds v to the "free_balance" field.
+func (u *UserUpsertOne) AddFreeBalance(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddFreeBalance(v)
+	})
+}
+
+// UpdateFreeBalance sets the "free_balance" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateFreeBalance() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateFreeBalance()
+	})
+}
+
+// SetPaidBalance sets the "paid_balance" field.
+func (u *UserUpsertOne) SetPaidBalance(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPaidBalance(v)
+	})
+}
+
+// AddPaidBalance adds v to the "paid_balance" field.
+func (u *UserUpsertOne) AddPaidBalance(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPaidBalance(v)
+	})
+}
+
+// UpdatePaidBalance sets the "paid_balance" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdatePaidBalance() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePaidBalance()
+	})
+}
+
+// SetFreeBalanceIssued sets the "free_balance_issued" field.
+func (u *UserUpsertOne) SetFreeBalanceIssued(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetFreeBalanceIssued(v)
+	})
+}
+
+// AddFreeBalanceIssued adds v to the "free_balance_issued" field.
+func (u *UserUpsertOne) AddFreeBalanceIssued(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddFreeBalanceIssued(v)
+	})
+}
+
+// UpdateFreeBalanceIssued sets the "free_balance_issued" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateFreeBalanceIssued() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateFreeBalanceIssued()
 	})
 }
 
@@ -2288,6 +2480,69 @@ func (u *UserUpsertBulk) AddBalance(v float64) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateBalance() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateBalance()
+	})
+}
+
+// SetFreeBalance sets the "free_balance" field.
+func (u *UserUpsertBulk) SetFreeBalance(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetFreeBalance(v)
+	})
+}
+
+// AddFreeBalance adds v to the "free_balance" field.
+func (u *UserUpsertBulk) AddFreeBalance(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddFreeBalance(v)
+	})
+}
+
+// UpdateFreeBalance sets the "free_balance" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateFreeBalance() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateFreeBalance()
+	})
+}
+
+// SetPaidBalance sets the "paid_balance" field.
+func (u *UserUpsertBulk) SetPaidBalance(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPaidBalance(v)
+	})
+}
+
+// AddPaidBalance adds v to the "paid_balance" field.
+func (u *UserUpsertBulk) AddPaidBalance(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddPaidBalance(v)
+	})
+}
+
+// UpdatePaidBalance sets the "paid_balance" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdatePaidBalance() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePaidBalance()
+	})
+}
+
+// SetFreeBalanceIssued sets the "free_balance_issued" field.
+func (u *UserUpsertBulk) SetFreeBalanceIssued(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetFreeBalanceIssued(v)
+	})
+}
+
+// AddFreeBalanceIssued adds v to the "free_balance_issued" field.
+func (u *UserUpsertBulk) AddFreeBalanceIssued(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddFreeBalanceIssued(v)
+	})
+}
+
+// UpdateFreeBalanceIssued sets the "free_balance_issued" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateFreeBalanceIssued() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateFreeBalanceIssued()
 	})
 }
 

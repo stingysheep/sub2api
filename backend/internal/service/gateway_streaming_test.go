@@ -32,6 +32,27 @@ func newMinimalGatewayService() *GatewayService {
 	}
 }
 
+func TestAnthropicStreamDataStartsSemanticOutput(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want bool
+	}{
+		{name: "message metadata", data: `{"type":"message_start","message":{"usage":{"input_tokens":10}}}`, want: false},
+		{name: "text block metadata", data: `{"type":"content_block_start","content_block":{"type":"text","text":""}}`, want: false},
+		{name: "empty text delta", data: `{"type":"content_block_delta","delta":{"type":"text_delta","text":""}}`, want: false},
+		{name: "text delta", data: `{"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}`, want: true},
+		{name: "thinking delta", data: `{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"reason"}}`, want: true},
+		{name: "tool input delta", data: `{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"q"}}`, want: true},
+		{name: "tool block start", data: `{"type":"content_block_start","content_block":{"type":"tool_use","id":"tool_1"}}`, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, anthropicStreamDataStartsSemanticOutput(tt.data))
+		})
+	}
+}
+
 func TestParseSSEUsage_MessageStart(t *testing.T) {
 	svc := newMinimalGatewayService()
 	usage := &ClaudeUsage{}

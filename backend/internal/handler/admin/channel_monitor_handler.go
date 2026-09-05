@@ -47,6 +47,8 @@ type channelMonitorCreateRequest struct {
 	PrimaryModel     string            `json:"primary_model" binding:"max=200"`
 	ExtraModels      []string          `json:"extra_models"`
 	GroupName        string            `json:"group_name" binding:"max=100"`
+	MonitorGroupID   *int64            `json:"monitor_group_id"`
+	MonitorSortOrder int               `json:"monitor_sort_order" binding:"omitempty,min=0"`
 	Enabled          *bool             `json:"enabled"`
 	IntervalSeconds  int               `json:"interval_seconds" binding:"required,min=15,max=3600"`
 	JitterSeconds    int               `json:"jitter_seconds" binding:"omitempty,min=0,max=3585"`
@@ -63,22 +65,25 @@ type channelMonitorCreateRequest struct {
 }
 
 type channelMonitorUpdateRequest struct {
-	Name             *string            `json:"name" binding:"omitempty,max=100"`
-	Provider         *string            `json:"provider" binding:"omitempty,oneof=openai anthropic gemini grok antigravity kimi zhipu deepseek"`
-	APIMode          *string            `json:"api_mode" binding:"omitempty,oneof=chat_completions responses"`
-	Endpoint         *string            `json:"endpoint" binding:"omitempty,max=500"`
-	APIKey           *string            `json:"api_key" binding:"omitempty,max=2000"`
-	PrimaryModel     *string            `json:"primary_model" binding:"omitempty,max=200"`
-	ExtraModels      *[]string          `json:"extra_models"`
-	GroupName        *string            `json:"group_name" binding:"omitempty,max=100"`
-	Enabled          *bool              `json:"enabled"`
-	IntervalSeconds  *int               `json:"interval_seconds" binding:"omitempty,min=15,max=3600"`
-	JitterSeconds    *int               `json:"jitter_seconds" binding:"omitempty,min=0,max=3585"`
-	TemplateID       *int64             `json:"template_id"`
-	ClearTemplate    bool               `json:"clear_template"` // true 时把 template_id 置空，忽略 TemplateID
-	ExtraHeaders     *map[string]string `json:"extra_headers"`
-	BodyOverrideMode *string            `json:"body_override_mode" binding:"omitempty,oneof=off merge replace"`
-	BodyOverride     *map[string]any    `json:"body_override"`
+	Name              *string            `json:"name" binding:"omitempty,max=100"`
+	Provider          *string            `json:"provider" binding:"omitempty,oneof=openai anthropic gemini grok antigravity kimi zhipu deepseek"`
+	APIMode           *string            `json:"api_mode" binding:"omitempty,oneof=chat_completions responses"`
+	Endpoint          *string            `json:"endpoint" binding:"omitempty,max=500"`
+	APIKey            *string            `json:"api_key" binding:"omitempty,max=2000"`
+	PrimaryModel      *string            `json:"primary_model" binding:"omitempty,max=200"`
+	ExtraModels       *[]string          `json:"extra_models"`
+	GroupName         *string            `json:"group_name" binding:"omitempty,max=100"`
+	MonitorGroupID    *int64             `json:"monitor_group_id"`
+	MonitorSortOrder  *int               `json:"monitor_sort_order" binding:"omitempty,min=0"`
+	ClearMonitorGroup bool               `json:"clear_monitor_group"`
+	Enabled           *bool              `json:"enabled"`
+	IntervalSeconds   *int               `json:"interval_seconds" binding:"omitempty,min=15,max=3600"`
+	JitterSeconds     *int               `json:"jitter_seconds" binding:"omitempty,min=0,max=3585"`
+	TemplateID        *int64             `json:"template_id"`
+	ClearTemplate     bool               `json:"clear_template"` // true 时把 template_id 置空，忽略 TemplateID
+	ExtraHeaders      *map[string]string `json:"extra_headers"`
+	BodyOverrideMode  *string            `json:"body_override_mode" binding:"omitempty,oneof=off merge replace"`
+	BodyOverride      *map[string]any    `json:"body_override"`
 
 	// CheckMode/AccountID：nil = 不更新；AccountID 指向 0 = 清空关联。
 	CheckMode *string `json:"check_mode" binding:"omitempty,oneof=probe quota quota_probe"`
@@ -86,27 +91,31 @@ type channelMonitorUpdateRequest struct {
 }
 
 type channelMonitorResponse struct {
-	ID                  int64                                `json:"id"`
-	Name                string                               `json:"name"`
-	Provider            string                               `json:"provider"`
-	APIMode             string                               `json:"api_mode"`
-	Endpoint            string                               `json:"endpoint"`
-	APIKeyMasked        string                               `json:"api_key_masked"`
-	APIKeyDecryptFailed bool                                 `json:"api_key_decrypt_failed"`
-	PrimaryModel        string                               `json:"primary_model"`
-	ExtraModels         []string                             `json:"extra_models"`
-	GroupName           string                               `json:"group_name"`
-	Enabled             bool                                 `json:"enabled"`
-	IntervalSeconds     int                                  `json:"interval_seconds"`
-	JitterSeconds       int                                  `json:"jitter_seconds"`
-	LastCheckedAt       *string                              `json:"last_checked_at"`
-	CreatedBy           int64                                `json:"created_by"`
-	CreatedAt           string                               `json:"created_at"`
-	UpdatedAt           string                               `json:"updated_at"`
-	PrimaryStatus       string                               `json:"primary_status"`
-	PrimaryLatencyMs    *int                                 `json:"primary_latency_ms"`
-	Availability7d      float64                              `json:"availability_7d"`
-	ExtraModelsStatus   []dto.ChannelMonitorExtraModelStatus `json:"extra_models_status"`
+	ID                    int64                                `json:"id"`
+	Name                  string                               `json:"name"`
+	Provider              string                               `json:"provider"`
+	APIMode               string                               `json:"api_mode"`
+	Endpoint              string                               `json:"endpoint"`
+	APIKeyMasked          string                               `json:"api_key_masked"`
+	APIKeyDecryptFailed   bool                                 `json:"api_key_decrypt_failed"`
+	PrimaryModel          string                               `json:"primary_model"`
+	ExtraModels           []string                             `json:"extra_models"`
+	GroupName             string                               `json:"group_name"`
+	MonitorGroupID        *int64                               `json:"monitor_group_id"`
+	MonitorGroupName      string                               `json:"monitor_group_name"`
+	MonitorGroupSortOrder int                                  `json:"monitor_group_sort_order"`
+	MonitorSortOrder      int                                  `json:"monitor_sort_order"`
+	Enabled               bool                                 `json:"enabled"`
+	IntervalSeconds       int                                  `json:"interval_seconds"`
+	JitterSeconds         int                                  `json:"jitter_seconds"`
+	LastCheckedAt         *string                              `json:"last_checked_at"`
+	CreatedBy             int64                                `json:"created_by"`
+	CreatedAt             string                               `json:"created_at"`
+	UpdatedAt             string                               `json:"updated_at"`
+	PrimaryStatus         string                               `json:"primary_status"`
+	PrimaryLatencyMs      *int                                 `json:"primary_latency_ms"`
+	Availability7d        float64                              `json:"availability_7d"`
+	ExtraModelsStatus     []dto.ChannelMonitorExtraModelStatus `json:"extra_models_status"`
 	// 请求自定义快照：前端编辑 / 展示「高级设置」用
 	TemplateID       *int64            `json:"template_id"`
 	ExtraHeaders     map[string]string `json:"extra_headers"`
@@ -118,6 +127,54 @@ type channelMonitorResponse struct {
 	CheckMode   string                       `json:"check_mode"`
 	AccountID   *int64                       `json:"account_id"`
 	LatestQuota *domain.MonitorQuotaSnapshot `json:"latest_quota,omitempty"`
+}
+
+type channelMonitorGroupCreateRequest struct {
+	Name string `json:"name" binding:"required,max=100"`
+}
+
+type channelMonitorGroupUpdateRequest struct {
+	Name string `json:"name" binding:"required,max=100"`
+}
+
+type channelMonitorGroupResponse struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	SortOrder    int    `json:"sort_order"`
+	MonitorCount int    `json:"monitor_count"`
+	CreatedBy    int64  `json:"created_by"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+type channelMonitorGroupSortOrderRequest struct {
+	Updates []struct {
+		ID        int64 `json:"id"`
+		SortOrder int   `json:"sort_order"`
+	} `json:"updates"`
+}
+
+type channelMonitorSortOrderRequest struct {
+	Updates []struct {
+		ID               int64  `json:"id"`
+		MonitorGroupID   *int64 `json:"monitor_group_id"`
+		MonitorSortOrder int    `json:"monitor_sort_order"`
+	} `json:"updates"`
+}
+
+func channelMonitorGroupToResponse(group *service.ChannelMonitorGroup) *channelMonitorGroupResponse {
+	if group == nil {
+		return nil
+	}
+	return &channelMonitorGroupResponse{
+		ID:           group.ID,
+		Name:         group.Name,
+		SortOrder:    group.SortOrder,
+		MonitorCount: group.MonitorCount,
+		CreatedBy:    group.CreatedBy,
+		CreatedAt:    group.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:    group.UpdatedAt.UTC().Format(time.RFC3339),
+	}
 }
 
 type channelMonitorCheckResultResponse struct {
@@ -162,28 +219,32 @@ func channelMonitorToResponse(m *service.ChannelMonitor) *channelMonitorResponse
 		headers = map[string]string{}
 	}
 	resp := &channelMonitorResponse{
-		ID:                  m.ID,
-		Name:                m.Name,
-		Provider:            m.Provider,
-		APIMode:             m.APIMode,
-		Endpoint:            m.Endpoint,
-		APIKeyMasked:        maskAPIKey(m.APIKey),
-		APIKeyDecryptFailed: m.APIKeyDecryptFailed,
-		PrimaryModel:        m.PrimaryModel,
-		ExtraModels:         extras,
-		GroupName:           m.GroupName,
-		Enabled:             m.Enabled,
-		IntervalSeconds:     m.IntervalSeconds,
-		JitterSeconds:       m.JitterSeconds,
-		CreatedBy:           m.CreatedBy,
-		CreatedAt:           m.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt:           m.UpdatedAt.UTC().Format(time.RFC3339),
-		TemplateID:          m.TemplateID,
-		ExtraHeaders:        headers,
-		BodyOverrideMode:    m.BodyOverrideMode,
-		BodyOverride:        m.BodyOverride,
-		CheckMode:           m.CheckMode,
-		AccountID:           m.AccountID,
+		ID:                    m.ID,
+		Name:                  m.Name,
+		Provider:              m.Provider,
+		APIMode:               m.APIMode,
+		Endpoint:              m.Endpoint,
+		APIKeyMasked:          maskAPIKey(m.APIKey),
+		APIKeyDecryptFailed:   m.APIKeyDecryptFailed,
+		PrimaryModel:          m.PrimaryModel,
+		ExtraModels:           extras,
+		GroupName:             m.GroupName,
+		MonitorGroupID:        m.MonitorGroupID,
+		MonitorGroupName:      m.MonitorGroupName,
+		MonitorGroupSortOrder: m.MonitorGroupSortOrder,
+		MonitorSortOrder:      m.MonitorSortOrder,
+		Enabled:               m.Enabled,
+		IntervalSeconds:       m.IntervalSeconds,
+		JitterSeconds:         m.JitterSeconds,
+		CreatedBy:             m.CreatedBy,
+		CreatedAt:             m.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:             m.UpdatedAt.UTC().Format(time.RFC3339),
+		TemplateID:            m.TemplateID,
+		ExtraHeaders:          headers,
+		BodyOverrideMode:      m.BodyOverrideMode,
+		BodyOverride:          m.BodyOverride,
+		CheckMode:             m.CheckMode,
+		AccountID:             m.AccountID,
 		// PrimaryStatus / PrimaryLatencyMs / Availability7d / LatestQuota
 		// 由 List handler 在批量聚合后填充。
 	}
@@ -344,6 +405,8 @@ func (h *ChannelMonitorHandler) Create(c *gin.Context) {
 		PrimaryModel:     req.PrimaryModel,
 		ExtraModels:      req.ExtraModels,
 		GroupName:        req.GroupName,
+		MonitorGroupID:   req.MonitorGroupID,
+		MonitorSortOrder: req.MonitorSortOrder,
 		Enabled:          enabled,
 		IntervalSeconds:  req.IntervalSeconds,
 		JitterSeconds:    req.JitterSeconds,
@@ -432,24 +495,27 @@ func (h *ChannelMonitorHandler) Update(c *gin.Context) {
 	}
 
 	m, err := h.monitorService.Update(c.Request.Context(), id, service.ChannelMonitorUpdateParams{
-		Name:             req.Name,
-		Provider:         req.Provider,
-		APIMode:          req.APIMode,
-		Endpoint:         req.Endpoint,
-		APIKey:           req.APIKey,
-		PrimaryModel:     req.PrimaryModel,
-		ExtraModels:      req.ExtraModels,
-		GroupName:        req.GroupName,
-		Enabled:          req.Enabled,
-		IntervalSeconds:  req.IntervalSeconds,
-		JitterSeconds:    req.JitterSeconds,
-		TemplateID:       req.TemplateID,
-		ClearTemplate:    req.ClearTemplate,
-		ExtraHeaders:     req.ExtraHeaders,
-		BodyOverrideMode: req.BodyOverrideMode,
-		BodyOverride:     req.BodyOverride,
-		CheckMode:        req.CheckMode,
-		AccountID:        req.AccountID,
+		Name:              req.Name,
+		Provider:          req.Provider,
+		APIMode:           req.APIMode,
+		Endpoint:          req.Endpoint,
+		APIKey:            req.APIKey,
+		PrimaryModel:      req.PrimaryModel,
+		ExtraModels:       req.ExtraModels,
+		GroupName:         req.GroupName,
+		MonitorGroupID:    req.MonitorGroupID,
+		MonitorSortOrder:  req.MonitorSortOrder,
+		ClearMonitorGroup: req.ClearMonitorGroup,
+		Enabled:           req.Enabled,
+		IntervalSeconds:   req.IntervalSeconds,
+		JitterSeconds:     req.JitterSeconds,
+		TemplateID:        req.TemplateID,
+		ClearTemplate:     req.ClearTemplate,
+		ExtraHeaders:      req.ExtraHeaders,
+		BodyOverrideMode:  req.BodyOverrideMode,
+		BodyOverride:      req.BodyOverride,
+		CheckMode:         req.CheckMode,
+		AccountID:         req.AccountID,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -487,6 +553,113 @@ func (h *ChannelMonitorHandler) Run(c *gin.Context) {
 		out = append(out, checkResultToResponse(r))
 	}
 	response.Success(c, gin.H{"results": out})
+}
+
+// ListGroups GET /api/v1/admin/channel-monitor-groups
+func (h *ChannelMonitorHandler) ListGroups(c *gin.Context) {
+	groups, err := h.monitorService.ListMonitorGroups(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	items := make([]*channelMonitorGroupResponse, 0, len(groups))
+	for _, group := range groups {
+		items = append(items, channelMonitorGroupToResponse(group))
+	}
+	response.Success(c, gin.H{"items": items})
+}
+
+// CreateGroup POST /api/v1/admin/channel-monitor-groups
+func (h *ChannelMonitorHandler) CreateGroup(c *gin.Context) {
+	var req channelMonitorGroupCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	subject, _ := middleware2.GetAuthSubjectFromContext(c)
+	group, err := h.monitorService.CreateMonitorGroup(c.Request.Context(), req.Name, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Created(c, channelMonitorGroupToResponse(group))
+}
+
+// UpdateGroup PUT /api/v1/admin/channel-monitor-groups/:id
+func (h *ChannelMonitorHandler) UpdateGroup(c *gin.Context) {
+	id, ok := parsePositiveMonitorGroupID(c)
+	if !ok {
+		return
+	}
+	var req channelMonitorGroupUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	group, err := h.monitorService.UpdateMonitorGroup(c.Request.Context(), id, req.Name)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, channelMonitorGroupToResponse(group))
+}
+
+// DeleteGroup DELETE /api/v1/admin/channel-monitor-groups/:id
+func (h *ChannelMonitorHandler) DeleteGroup(c *gin.Context) {
+	id, ok := parsePositiveMonitorGroupID(c)
+	if !ok {
+		return
+	}
+	if err := h.monitorService.DeleteMonitorGroup(c.Request.Context(), id); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, nil)
+}
+
+// UpdateGroupSortOrder PUT /api/v1/admin/channel-monitor-groups/sort-order
+func (h *ChannelMonitorHandler) UpdateGroupSortOrder(c *gin.Context) {
+	var req channelMonitorGroupSortOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	updates := make([]service.ChannelMonitorGroupSortOrderUpdate, 0, len(req.Updates))
+	for _, update := range req.Updates {
+		updates = append(updates, service.ChannelMonitorGroupSortOrderUpdate{ID: update.ID, SortOrder: update.SortOrder})
+	}
+	if err := h.monitorService.UpdateMonitorGroupSortOrder(c.Request.Context(), updates); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, nil)
+}
+
+// UpdateMonitorSortOrder PUT /api/v1/admin/channel-monitors/sort-order
+func (h *ChannelMonitorHandler) UpdateMonitorSortOrder(c *gin.Context) {
+	var req channelMonitorSortOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	updates := make([]service.ChannelMonitorSortOrderUpdate, 0, len(req.Updates))
+	for _, update := range req.Updates {
+		updates = append(updates, service.ChannelMonitorSortOrderUpdate{ID: update.ID, MonitorGroupID: update.MonitorGroupID, MonitorSortOrder: update.MonitorSortOrder})
+	}
+	if err := h.monitorService.UpdateMonitorSortOrder(c.Request.Context(), updates); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, nil)
+}
+
+func parsePositiveMonitorGroupID(c *gin.Context) (int64, bool) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_MONITOR_GROUP_ID", "invalid monitor group id"))
+		return 0, false
+	}
+	return id, true
 }
 
 // History GET /api/v1/admin/channel-monitors/:id/history

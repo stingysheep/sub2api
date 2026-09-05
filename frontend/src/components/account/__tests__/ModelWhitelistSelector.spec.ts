@@ -118,7 +118,7 @@ describe('ModelWhitelistSelector', () => {
     expect(copyToClipboard).not.toHaveBeenCalled()
   })
 
-  it('warns when model IDs sync but capability metadata is incomplete', async () => {
+  it('keeps model IDs usable when optional capability metadata is incomplete', async () => {
     syncUpstreamModels.mockResolvedValue({
       models: ['x-preview-f-free'],
       warnings: [
@@ -149,8 +149,7 @@ describe('ModelWhitelistSelector', () => {
     await flushPromises()
 
     expect(wrapper.emitted('update:modelValue')).toEqual([[['x-preview-f-free']]])
-    expect(showWarning).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsMetadataIncomplete')
-    expect(showSuccess).not.toHaveBeenCalled()
+    expect(showWarning).not.toHaveBeenCalled()
   })
 
   it('shows success and a partial warning when some capabilities were saved', async () => {

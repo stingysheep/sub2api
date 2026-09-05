@@ -18,6 +18,13 @@ type TempUnscheduler interface {
 	TempUnscheduleRetryableError(ctx context.Context, accountID int64, failoverErr *service.UpstreamFailoverError)
 }
 
+// AccountRecoveryScheduler is an optional capability implemented by gateway
+// services. It observes an account after an account-scoped failure without
+// issuing another billable upstream request.
+type AccountRecoveryScheduler interface {
+	ScheduleAccountRecoveryCheck(ctx context.Context, accountID int64)
+}
+
 // FailoverAction 表示 failover 错误处理后的下一步动作
 type FailoverAction int
 
@@ -54,6 +61,13 @@ const (
 // profitVetoExhaustedMessage 是利润否决次数耗尽时返回给客户端的文案。
 // 语义上等同于「无可用账号」：候选账号都不满足分组的利润约束。
 const profitVetoExhaustedMessage = "No available accounts: all candidates rejected by group profit control"
+
+func maxAccountSwitchesForRequest(c *gin.Context, normal int) int {
+	if service.IsChannelMonitorProbe(c) {
+		return service.MonitorFailoverMaxSwitches()
+	}
+	return normal
+}
 
 func sameAccountRetryDelayFor(failoverErr *service.UpstreamFailoverError, retryCount int) time.Duration {
 	if failoverErr == nil {
@@ -207,6 +221,11 @@ func (s *FailoverState) HandleFailoverError(
 	if failoverErr == nil || !failoverErr.ShouldRetryNextAccount() {
 		return FailoverExhausted
 	}
+	if !failoverErr.RequestScopedTransient && failoverErr.ShouldReportAccountScheduleFailure() {
+		if scheduler, ok := gatewayService.(AccountRecoveryScheduler); ok {
+			scheduler.ScheduleAccountRecoveryCheck(ctx, accountID)
+		}
+	}
 
 	// 同账号重试不算切换账号，粘性会话仅在实际切换时强制缓存计费。
 	retryCount := s.SameAccountRetryCount[accountID]
@@ -280,9 +299,16 @@ func (s *FailoverState) HandleSelectionExhausted(ctx context.Context) FailoverAc
 		return FailoverCanceled
 	}
 
-	if s.LastFailoverErr != nil &&
-		s.LastFailoverErr.StatusCode == http.StatusServiceUnavailable &&
-		s.SwitchCount <= s.MaxSwitches {
+	if s.LastFailoverErr != nil && s.LastFailoverErr.StatusCode == http.StatusServiceUnavailable {
+		// Monitor probes must walk the current account pool once. Re-entering
+		// the ordinary single-account 503 backoff would clear exclusions and
+		// keep probing the same failed accounts until the outer 6m deadline.
+		if s.MaxSwitches == service.MonitorFailoverMaxSwitches() {
+			return FailoverExhausted
+		}
+		if s.SwitchCount > s.MaxSwitches {
+			return FailoverExhausted
+		}
 
 		// 排除列表全由利润门否决贡献时，清空后会被原样恢复：退避重试拿不到
 		// 任何新候选，而利润否决不推进 SwitchCount，退避条件将永远成立。

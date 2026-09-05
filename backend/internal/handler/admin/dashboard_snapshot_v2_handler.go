@@ -47,6 +47,7 @@ type dashboardSnapshotV2Filters struct {
 	NativeCompactionV2    *bool
 	BillingType           *int8
 	UpstreamModelMismatch *bool
+	UserRole              string
 }
 
 type dashboardSnapshotV2CacheKey struct {
@@ -63,6 +64,7 @@ type dashboardSnapshotV2CacheKey struct {
 	NativeCompactionV2    *bool  `json:"native_compaction_v2"`
 	BillingType           *int8  `json:"billing_type"`
 	UpstreamModelMismatch *bool  `json:"upstream_model_mismatch"`
+	UserRole              string `json:"user_role,omitempty"`
 	IncludeStats          bool   `json:"include_stats"`
 	IncludeTrend          bool   `json:"include_trend"`
 	IncludeModels         bool   `json:"include_models"`
@@ -110,6 +112,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 		NativeCompactionV2:    filters.NativeCompactionV2,
 		BillingType:           filters.BillingType,
 		UpstreamModelMismatch: filters.UpstreamModelMismatch,
+		UserRole:              filters.UserRole,
 		IncludeStats:          includeStats,
 		IncludeTrend:          includeTrend,
 		IncludeModels:         includeModels,
@@ -166,7 +169,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 	}
 
 	if includeStats {
-		stats, err := h.dashboardService.GetDashboardStats(ctx)
+		stats, err := h.dashboardService.GetDashboardStatsWithUserRole(ctx, filters.UserRole)
 		if err != nil {
 			return nil, errors.New("failed to get dashboard statistics")
 		}
@@ -192,6 +195,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.NativeCompactionV2,
 			filters.BillingType,
 			filters.UpstreamModelMismatch,
+			filters.UserRole,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get usage trend")
@@ -214,6 +218,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.NativeCompactionV2,
 			filters.BillingType,
 			filters.UpstreamModelMismatch,
+			filters.UserRole,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get model statistics")
@@ -235,6 +240,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.NativeCompactionV2,
 			filters.BillingType,
 			filters.UpstreamModelMismatch,
+			filters.UserRole,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get group statistics")
@@ -243,7 +249,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 	}
 
 	if includeUsersTrend {
-		usersTrend, _, err := h.getUserUsageTrendCached(ctx, startTime, endTime, granularity, usersTrendLimit)
+		usersTrend, _, err := h.getUserUsageTrendCached(ctx, startTime, endTime, granularity, usersTrendLimit, filters.UserRole)
 		if err != nil {
 			return nil, errors.New("failed to get user usage trend")
 		}
@@ -257,6 +263,11 @@ func parseDashboardSnapshotV2Filters(c *gin.Context) (*dashboardSnapshotV2Filter
 	filters := &dashboardSnapshotV2Filters{
 		Model: strings.TrimSpace(c.Query("model")),
 	}
+	userRole, err := parseOptionalUserRoleDashboardFilter(c)
+	if err != nil {
+		return nil, err
+	}
+	filters.UserRole = userRole
 
 	if userIDStr := strings.TrimSpace(c.Query("user_id")); userIDStr != "" {
 		id, err := strconv.ParseInt(userIDStr, 10, 64)

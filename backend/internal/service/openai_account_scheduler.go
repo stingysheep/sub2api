@@ -77,6 +77,7 @@ type OpenAIAccountScheduleRequest struct {
 	StickyWeighted          bool
 	SubscriptionPriority    bool
 	PreserveStickyBinding   bool
+	ForceStickyRebind       bool
 	RequirePrivacySet       bool
 	PreviousResponseID      string
 	PreviousResponseCanMove bool
@@ -445,6 +446,15 @@ func (s *defaultOpenAIAccountScheduler) Select(
 		}
 	}
 
+	// A recovery observer may have confirmed a better-priority account. Mark
+	// this request so load-balance selection is allowed to replace the stale
+	// failover sticky binding.
+	if req.StickyAccountID > 0 && s.service != nil && s.service.recoveryCoordinator != nil {
+		if sticky, err := s.service.getSchedulableAccount(ctx, req.StickyAccountID); err == nil && sticky != nil && s.service.shouldPreemptRecoveredSticky(ctx, req, sticky) {
+			req.ForceStickyRebind = true
+		}
+	}
+
 	if !req.StickyWeighted {
 		selection, escapedSticky, err := s.selectBySessionHash(ctx, req)
 		if err != nil {
@@ -458,7 +468,9 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			return selection, decision, nil
 		}
 		if escapedSticky {
-			req.PreserveStickyBinding = true
+			if !req.ForceStickyRebind {
+				req.PreserveStickyBinding = true
+			}
 		}
 	}
 
@@ -527,6 +539,9 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 	if !s.isAccountRequestCompatible(ctx, account, req) {
 		return nil, false, nil
+	}
+	if s.service.shouldPreemptRecoveredSticky(ctx, req, account) {
+		return nil, true, nil
 	}
 	if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
 		clearBinding()
@@ -1224,7 +1239,7 @@ func (s *defaultOpenAIAccountScheduler) tryAcquireOpenAISelectionOrderWithBudget
 				continue
 			}
 		}
-		if req.SessionHash != "" && !req.PreserveStickyBinding {
+		if req.SessionHash != "" && (!req.PreserveStickyBinding || req.ForceStickyRebind) {
 			_ = s.service.bindOpenAIStickySessionDuringSelection(ctx, req.GroupID, req.SessionHash, fresh.ID)
 		}
 		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
@@ -1315,7 +1330,7 @@ func (s *defaultOpenAIAccountScheduler) tryFallbackToWeightedSticky(
 			return nil, acquireErr
 		}
 		if result != nil && result.Acquired {
-			if req.SessionHash != "" && !req.PreserveStickyBinding {
+			if req.SessionHash != "" && (!req.PreserveStickyBinding || req.ForceStickyRebind) {
 				_ = s.service.bindOpenAIStickySessionDuringSelection(ctx, req.GroupID, req.SessionHash, account.ID)
 			}
 			return attachSelectionProfitGate(ctx, &AccountSelectionResult{
@@ -2421,6 +2436,9 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(account *Accoun
 		return false
 	}
 	accountID := account.ID
+	if !success {
+		s.scheduleAccountRecoveryCheck(accountID)
+	}
 	healthTripped := false
 	if s != nil && s.rateLimitService != nil {
 		if success {

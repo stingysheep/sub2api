@@ -29,6 +29,12 @@ const (
 	FieldRole = "role"
 	// FieldBalance holds the string denoting the balance field in the database.
 	FieldBalance = "balance"
+	// FieldFreeBalance holds the string denoting the free_balance field in the database.
+	FieldFreeBalance = "free_balance"
+	// FieldPaidBalance holds the string denoting the paid_balance field in the database.
+	FieldPaidBalance = "paid_balance"
+	// FieldFreeBalanceIssued holds the string denoting the free_balance_issued field in the database.
+	FieldFreeBalanceIssued = "free_balance_issued"
 	// FieldFrozenBalance holds the string denoting the frozen_balance field in the database.
 	FieldFrozenBalance = "frozen_balance"
 	// FieldConcurrency holds the string denoting the concurrency field in the database.
@@ -203,6 +209,9 @@ var Columns = []string{
 	FieldPasswordHash,
 	FieldRole,
 	FieldBalance,
+	FieldFreeBalance,
+	FieldPaidBalance,
+	FieldFreeBalanceIssued,
 	FieldFrozenBalance,
 	FieldConcurrency,
 	FieldStatus,
@@ -263,6 +272,12 @@ var (
 	RoleValidator func(string) error
 	// DefaultBalance holds the default value on creation for the "balance" field.
 	DefaultBalance float64
+	// DefaultFreeBalance holds the default value on creation for the "free_balance" field.
+	DefaultFreeBalance float64
+	// DefaultPaidBalance holds the default value on creation for the "paid_balance" field.
+	DefaultPaidBalance float64
+	// DefaultFreeBalanceIssued holds the default value on creation for the "free_balance_issued" field.
+	DefaultFreeBalanceIssued float64
 	// DefaultFrozenBalance holds the default value on creation for the "frozen_balance" field.
 	DefaultFrozenBalance float64
 	// DefaultConcurrency holds the default value on creation for the "concurrency" field.
@@ -338,6 +353,21 @@ func ByRole(opts ...sql.OrderTermOption) OrderOption {
 // ByBalance orders the results by the balance field.
 func ByBalance(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBalance, opts...).ToFunc()
+}
+
+// ByFreeBalance orders the results by the free_balance field.
+func ByFreeBalance(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFreeBalance, opts...).ToFunc()
+}
+
+// ByPaidBalance orders the results by the paid_balance field.
+func ByPaidBalance(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPaidBalance, opts...).ToFunc()
+}
+
+// ByFreeBalanceIssued orders the results by the free_balance_issued field.
+func ByFreeBalanceIssued(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFreeBalanceIssued, opts...).ToFunc()
 }
 
 // ByFrozenBalance orders the results by the frozen_balance field.

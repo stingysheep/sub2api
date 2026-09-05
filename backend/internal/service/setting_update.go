@@ -339,6 +339,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeySiteName] = settings.SiteName
 	updates[SettingKeySiteLogo] = settings.SiteLogo
 	updates[SettingKeySiteSubtitle] = settings.SiteSubtitle
+	updates[SettingKeyDashboardNotice] = settings.DashboardNotice
 	updates[SettingKeyAPIBaseURL] = settings.APIBaseURL
 	updates[SettingKeyContactInfo] = settings.ContactInfo
 	updates[SettingKeyDocURL] = settings.DocURL
@@ -365,6 +366,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyDefaultBalance] = strconv.FormatFloat(settings.DefaultBalance, 'f', 8, 64)
 	settings.AffiliateRebateRate = clampAffiliateRebateRate(settings.AffiliateRebateRate)
 	updates[SettingKeyAffiliateRebateRate] = strconv.FormatFloat(settings.AffiliateRebateRate, 'f', 8, 64)
+	settings.AffiliateDisplayRebateRate = clampAffiliateRebateRate(settings.AffiliateDisplayRebateRate)
+	updates[SettingKeyAffiliateDisplayRebateRate] = strconv.FormatFloat(settings.AffiliateDisplayRebateRate, 'f', 8, 64)
 	if settings.AffiliateRebateFreezeHours < 0 {
 		settings.AffiliateRebateFreezeHours = AffiliateRebateFreezeHoursDefault
 	}
@@ -415,6 +418,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyChannelMonitorMode] = normalizeChannelMonitorMode(settings.ChannelMonitorMode)
 	if v := clampChannelMonitorInterval(settings.ChannelMonitorDefaultIntervalSeconds); v > 0 {
 		updates[SettingKeyChannelMonitorDefaultIntervalSeconds] = strconv.Itoa(v)
+	}
+	if v := clampChannelMonitorDegradedThreshold(settings.ChannelMonitorDegradedThresholdSeconds); v > 0 {
+		updates[SettingKeyChannelMonitorDegradedThresholdSeconds] = strconv.Itoa(v)
 	}
 	updates[SettingKeyChannelMonitorHideThroughput] = strconv.FormatBool(settings.ChannelMonitorHideThroughput)
 	updates[SettingKeyChannelMonitorShowQuota] = strconv.FormatBool(settings.ChannelMonitorShowQuota)

@@ -195,6 +195,54 @@ func (_u *ChannelMonitorUpdate) ClearGroupName() *ChannelMonitorUpdate {
 	return _u
 }
 
+// SetMonitorGroupID sets the "monitor_group_id" field.
+func (_u *ChannelMonitorUpdate) SetMonitorGroupID(v int64) *ChannelMonitorUpdate {
+	_u.mutation.ResetMonitorGroupID()
+	_u.mutation.SetMonitorGroupID(v)
+	return _u
+}
+
+// SetNillableMonitorGroupID sets the "monitor_group_id" field if the given value is not nil.
+func (_u *ChannelMonitorUpdate) SetNillableMonitorGroupID(v *int64) *ChannelMonitorUpdate {
+	if v != nil {
+		_u.SetMonitorGroupID(*v)
+	}
+	return _u
+}
+
+// AddMonitorGroupID adds value to the "monitor_group_id" field.
+func (_u *ChannelMonitorUpdate) AddMonitorGroupID(v int64) *ChannelMonitorUpdate {
+	_u.mutation.AddMonitorGroupID(v)
+	return _u
+}
+
+// ClearMonitorGroupID clears the value of the "monitor_group_id" field.
+func (_u *ChannelMonitorUpdate) ClearMonitorGroupID() *ChannelMonitorUpdate {
+	_u.mutation.ClearMonitorGroupID()
+	return _u
+}
+
+// SetMonitorSortOrder sets the "monitor_sort_order" field.
+func (_u *ChannelMonitorUpdate) SetMonitorSortOrder(v int) *ChannelMonitorUpdate {
+	_u.mutation.ResetMonitorSortOrder()
+	_u.mutation.SetMonitorSortOrder(v)
+	return _u
+}
+
+// SetNillableMonitorSortOrder sets the "monitor_sort_order" field if the given value is not nil.
+func (_u *ChannelMonitorUpdate) SetNillableMonitorSortOrder(v *int) *ChannelMonitorUpdate {
+	if v != nil {
+		_u.SetMonitorSortOrder(*v)
+	}
+	return _u
+}
+
+// AddMonitorSortOrder adds value to the "monitor_sort_order" field.
+func (_u *ChannelMonitorUpdate) AddMonitorSortOrder(v int) *ChannelMonitorUpdate {
+	_u.mutation.AddMonitorSortOrder(v)
+	return _u
+}
+
 // SetEnabled sets the "enabled" field.
 func (_u *ChannelMonitorUpdate) SetEnabled(v bool) *ChannelMonitorUpdate {
 	_u.mutation.SetEnabled(v)
@@ -601,6 +649,21 @@ func (_u *ChannelMonitorUpdate) sqlSave(ctx context.Context) (_node int, err err
 	if _u.mutation.GroupNameCleared() {
 		_spec.ClearField(channelmonitor.FieldGroupName, field.TypeString)
 	}
+	if value, ok := _u.mutation.MonitorGroupID(); ok {
+		_spec.SetField(channelmonitor.FieldMonitorGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorGroupID(); ok {
+		_spec.AddField(channelmonitor.FieldMonitorGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorGroupIDCleared() {
+		_spec.ClearField(channelmonitor.FieldMonitorGroupID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorSortOrder(); ok {
+		_spec.SetField(channelmonitor.FieldMonitorSortOrder, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorSortOrder(); ok {
+		_spec.AddField(channelmonitor.FieldMonitorSortOrder, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(channelmonitor.FieldEnabled, field.TypeBool, value)
 	}
@@ -939,6 +1002,54 @@ func (_u *ChannelMonitorUpdateOne) SetNillableGroupName(v *string) *ChannelMonit
 // ClearGroupName clears the value of the "group_name" field.
 func (_u *ChannelMonitorUpdateOne) ClearGroupName() *ChannelMonitorUpdateOne {
 	_u.mutation.ClearGroupName()
+	return _u
+}
+
+// SetMonitorGroupID sets the "monitor_group_id" field.
+func (_u *ChannelMonitorUpdateOne) SetMonitorGroupID(v int64) *ChannelMonitorUpdateOne {
+	_u.mutation.ResetMonitorGroupID()
+	_u.mutation.SetMonitorGroupID(v)
+	return _u
+}
+
+// SetNillableMonitorGroupID sets the "monitor_group_id" field if the given value is not nil.
+func (_u *ChannelMonitorUpdateOne) SetNillableMonitorGroupID(v *int64) *ChannelMonitorUpdateOne {
+	if v != nil {
+		_u.SetMonitorGroupID(*v)
+	}
+	return _u
+}
+
+// AddMonitorGroupID adds value to the "monitor_group_id" field.
+func (_u *ChannelMonitorUpdateOne) AddMonitorGroupID(v int64) *ChannelMonitorUpdateOne {
+	_u.mutation.AddMonitorGroupID(v)
+	return _u
+}
+
+// ClearMonitorGroupID clears the value of the "monitor_group_id" field.
+func (_u *ChannelMonitorUpdateOne) ClearMonitorGroupID() *ChannelMonitorUpdateOne {
+	_u.mutation.ClearMonitorGroupID()
+	return _u
+}
+
+// SetMonitorSortOrder sets the "monitor_sort_order" field.
+func (_u *ChannelMonitorUpdateOne) SetMonitorSortOrder(v int) *ChannelMonitorUpdateOne {
+	_u.mutation.ResetMonitorSortOrder()
+	_u.mutation.SetMonitorSortOrder(v)
+	return _u
+}
+
+// SetNillableMonitorSortOrder sets the "monitor_sort_order" field if the given value is not nil.
+func (_u *ChannelMonitorUpdateOne) SetNillableMonitorSortOrder(v *int) *ChannelMonitorUpdateOne {
+	if v != nil {
+		_u.SetMonitorSortOrder(*v)
+	}
+	return _u
+}
+
+// AddMonitorSortOrder adds value to the "monitor_sort_order" field.
+func (_u *ChannelMonitorUpdateOne) AddMonitorSortOrder(v int) *ChannelMonitorUpdateOne {
+	_u.mutation.AddMonitorSortOrder(v)
 	return _u
 }
 
@@ -1377,6 +1488,21 @@ func (_u *ChannelMonitorUpdateOne) sqlSave(ctx context.Context) (_node *ChannelM
 	}
 	if _u.mutation.GroupNameCleared() {
 		_spec.ClearField(channelmonitor.FieldGroupName, field.TypeString)
+	}
+	if value, ok := _u.mutation.MonitorGroupID(); ok {
+		_spec.SetField(channelmonitor.FieldMonitorGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorGroupID(); ok {
+		_spec.AddField(channelmonitor.FieldMonitorGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorGroupIDCleared() {
+		_spec.ClearField(channelmonitor.FieldMonitorGroupID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorSortOrder(); ok {
+		_spec.SetField(channelmonitor.FieldMonitorSortOrder, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorSortOrder(); ok {
+		_spec.AddField(channelmonitor.FieldMonitorSortOrder, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(channelmonitor.FieldEnabled, field.TypeBool, value)

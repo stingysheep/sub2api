@@ -31,6 +31,15 @@ func (m *mockTempUnscheduler) TempUnscheduleRetryableError(_ context.Context, ac
 	m.calls = append(m.calls, tempUnscheduleCall{accountID: accountID, failoverErr: failoverErr})
 }
 
+type mockRecoveryTempUnscheduler struct {
+	mockTempUnscheduler
+	recoveryCalls []int64
+}
+
+func (m *mockRecoveryTempUnscheduler) ScheduleAccountRecoveryCheck(_ context.Context, accountID int64) {
+	m.recoveryCalls = append(m.recoveryCalls, accountID)
+}
+
 func TestSameAccountRetryDelayFor(t *testing.T) {
 	capacityErr := &service.UpstreamFailoverError{RequestScopedTransient: true}
 
@@ -154,6 +163,29 @@ func TestNewFailoverState(t *testing.T) {
 		fs := NewFailoverState(0, false)
 		require.Equal(t, 0, fs.MaxSwitches)
 	})
+}
+
+func TestMaxAccountSwitchesForRequest_MonitorUsesPoolExhaustion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Request.Header.Set(service.ChannelMonitorProbeHeader, "1")
+
+	require.Equal(t, service.MonitorFailoverMaxSwitches(), maxAccountSwitchesForRequest(c, 10))
+	c.Request.Header.Del(service.ChannelMonitorProbeHeader)
+	require.Equal(t, 10, maxAccountSwitchesForRequest(c, 10))
+}
+
+func TestHandleSelectionExhausted_MonitorDoesNotReset503Pool(t *testing.T) {
+	fs := NewFailoverState(service.MonitorFailoverMaxSwitches(), false)
+	fs.LastFailoverErr = &service.UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable}
+	fs.FailedAccountIDs[101] = struct{}{}
+
+	start := time.Now()
+	require.Equal(t, FailoverExhausted, fs.HandleSelectionExhausted(context.Background()))
+	require.Less(t, time.Since(start), 100*time.Millisecond)
+	require.Contains(t, fs.FailedAccountIDs, int64(101))
 }
 
 // ---------------------------------------------------------------------------
@@ -614,6 +646,16 @@ func TestHandleFailoverError_TempUnschedule(t *testing.T) {
 		require.Equal(t, 502, mock.calls[0].failoverErr.StatusCode)
 		require.True(t, mock.calls[0].failoverErr.RetryableOnSameAccount)
 	})
+}
+
+func TestHandleFailoverError_SchedulesAccountRecoveryForAccountScopedFailure(t *testing.T) {
+	mock := &mockRecoveryTempUnscheduler{}
+	fs := NewFailoverState(2, false)
+	err := newTestFailoverErr(401, false, false)
+
+	action := fs.HandleFailoverError(context.Background(), mock, 73, service.PlatformAnthropic, 0, err)
+	require.Equal(t, FailoverContinue, action)
+	require.Equal(t, []int64{73}, mock.recoveryCalls)
 }
 
 // ---------------------------------------------------------------------------

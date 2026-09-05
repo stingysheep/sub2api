@@ -153,6 +153,13 @@ export interface AffiliateInvitee {
   total_rebate: number
 }
 
+export interface AffiliateLeaderboardEntry {
+  rank: number
+  email: string
+  invited_count: number
+  history_rebate: number
+}
+
 export interface UserAffiliateDetail {
   user_id: number
   aff_code: string
@@ -163,7 +170,9 @@ export interface UserAffiliateDetail {
   aff_history_quota: number
   /** 当前用户作为邀请人时实际生效的返利比例（专属覆盖全局）。0-100。 */
   effective_rebate_rate_percent: number
+  display_rebate_rate_percent?: number
   invitees: AffiliateInvitee[]
+  leaderboard?: AffiliateLeaderboardEntry[]
 }
 
 export interface AffiliateTransferResponse {
@@ -234,6 +243,7 @@ export interface PublicSettings {
   site_name: string
   site_logo: string
   site_subtitle: string
+  dashboard_notice?: string
   api_base_url: string
   contact_info: string
   doc_url: string
@@ -1209,6 +1219,7 @@ export interface Account {
   proxy?: Proxy
   group_ids?: number[] // Groups this account belongs to
   groups?: Group[] // Preloaded group objects
+  account_groups?: AccountGroup[]
 
   // Rate limit & scheduling fields
   schedulable: boolean
@@ -1290,6 +1301,13 @@ export interface Account {
 // The admin account list may return this compact shape when lite=1. Detail
 // operations still use Account from /admin/accounts/:id.
 export type AccountListItem = Omit<Account, 'groups'>
+
+export interface AccountGroup {
+  account_id: number
+  group_id: number
+  priority: number
+  created_at?: string
+}
 
 export interface AccountSchedulerGroupScore {
   group_id?: number | null
@@ -1800,6 +1818,7 @@ export interface RedeemCode {
   code: string
   type: RedeemCodeType
   value: number
+  balance_source?: 'free' | 'paid'
   status: 'active' | 'used' | 'expired' | 'unused' | 'disabled'
   used_by: number | null
   used_at: string | null
@@ -1817,6 +1836,7 @@ export interface GenerateRedeemCodesRequest {
   count: number
   type: RedeemCodeType
   value: number
+  balance_source?: 'free' | 'paid'
   group_id?: number | null // 订阅类型专用
   validity_days?: number // 订阅类型专用
   expires_at?: string | null

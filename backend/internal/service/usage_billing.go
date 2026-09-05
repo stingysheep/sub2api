@@ -168,6 +168,9 @@ type UsageBillingApplyResult struct {
 	NewBalance           *float64           // post-deduction balance (nil = no balance deduction)
 	BalanceOverdrafted   bool               // true when the sufficient-balance guard missed and debt was still recorded
 	QuotaState           *AccountQuotaState // post-increment quota state (nil = no quota increment)
+	FreeBalanceCost      float64
+	PaidBalanceCost      float64
+	UnfundedBalanceCost  float64
 }
 
 // BatchImageBalanceHoldCommand describes an idempotent balance hold operation.

@@ -1092,7 +1092,10 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						}
 					}
 					if data != "" {
-						if firstTokenMs == nil && data != "[DONE]" {
+						// 仅把真实语义输出计为 TTFT。Anthropic 会先发送
+						// message_start/content_block_start 等元数据帧；把这些帧
+						// 当成首字会让 sticky 调度器误判慢账号为低延迟。
+						if firstTokenMs == nil && anthropicStreamDataStartsSemanticOutput(data) {
 							ms := int(time.Since(startTime).Milliseconds())
 							firstTokenMs = &ms
 						}

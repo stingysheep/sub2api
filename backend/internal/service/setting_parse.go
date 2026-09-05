@@ -126,6 +126,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyDefaultConcurrency:                        strconv.Itoa(s.cfg.Default.UserConcurrency),
 		SettingKeyDefaultBalance:                            strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
 		SettingKeyAffiliateRebateRate:                       strconv.FormatFloat(AffiliateRebateRateDefault, 'f', 8, 64),
+		SettingKeyAffiliateDisplayRebateRate:                strconv.FormatFloat(AffiliateRebateRateDefault, 'f', 8, 64),
 		SettingKeyAffiliateRebateFreezeHours:                strconv.Itoa(AffiliateRebateFreezeHoursDefault),
 		SettingKeyAffiliateRebateDurationDays:               strconv.Itoa(AffiliateRebateDurationDaysDefault),
 		SettingKeyAffiliateRebatePerInviteeCap:              strconv.FormatFloat(AffiliateRebatePerInviteeCapDefault, 'f', 2, 64),
@@ -186,11 +187,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpsMetricsIntervalSeconds:    "60",
 
 		// Channel monitor defaults (enabled, 60s)
-		SettingKeyChannelMonitorEnabled:                "true",
-		SettingKeyChannelMonitorMode:                   ChannelMonitorModeV1,
-		SettingKeyChannelMonitorDefaultIntervalSeconds: "60",
-		SettingKeyChannelMonitorHideThroughput:         "true",
-		SettingKeyChannelMonitorShowQuota:              "false",
+		SettingKeyChannelMonitorEnabled:                  "true",
+		SettingKeyChannelMonitorMode:                     ChannelMonitorModeV1,
+		SettingKeyChannelMonitorDefaultIntervalSeconds:   "60",
+		SettingKeyChannelMonitorDegradedThresholdSeconds: "15",
+		SettingKeyChannelMonitorHideThroughput:           "true",
+		SettingKeyChannelMonitorShowQuota:                "false",
 
 		// Grok: safe defaults — no cross-vendor model rewrite unless operators enable it.
 		SettingKeyGrokDefaultTextModel:           "grok-4.6",
@@ -353,6 +355,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		SiteName:                               s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:                               settings[SettingKeySiteLogo],
 		SiteSubtitle:                           s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
+		DashboardNotice:                        settings[SettingKeyDashboardNotice],
 		APIBaseURL:                             settings[SettingKeyAPIBaseURL],
 		ContactInfo:                            settings[SettingKeyContactInfo],
 		DocURL:                                 settings[SettingKeyDocURL],
@@ -397,6 +400,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.AffiliateRebateRate = clampAffiliateRebateRate(rebateRate)
 	} else {
 		result.AffiliateRebateRate = AffiliateRebateRateDefault
+	}
+	if displayRate, err := strconv.ParseFloat(settings[SettingKeyAffiliateDisplayRebateRate], 64); err == nil {
+		result.AffiliateDisplayRebateRate = clampAffiliateRebateRate(displayRate)
+	} else {
+		result.AffiliateDisplayRebateRate = result.AffiliateRebateRate
 	}
 	if freezeHours, err := strconv.Atoi(settings[SettingKeyAffiliateRebateFreezeHours]); err == nil && freezeHours >= 0 {
 		if freezeHours > AffiliateRebateFreezeHoursMax {
@@ -796,6 +804,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.ChannelMonitorMode = normalizeChannelMonitorMode(settings[SettingKeyChannelMonitorMode])
 	result.ChannelMonitorDefaultIntervalSeconds = parseChannelMonitorInterval(
 		settings[SettingKeyChannelMonitorDefaultIntervalSeconds],
+	)
+	result.ChannelMonitorDegradedThresholdSeconds = parseChannelMonitorDegradedThreshold(
+		settings[SettingKeyChannelMonitorDegradedThresholdSeconds],
 	)
 	// 默认隐藏吞吐（迁移 206 的隐私默认）：未配置时必须与 setting_public.go 的
 	// 公开读取路径给出同一个值，否则管理端看到“未隐藏”而用户端实际已隐藏。
