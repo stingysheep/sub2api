@@ -24,6 +24,7 @@ export interface AdminUsageStatsResponse {
   total_paid_balance_cost: number
   total_unfunded_cost: number
   total_free_upstream_cost: number
+  selected_free_upstream_cost: number
   total_paid_upstream_cost: number
   total_free_balance_issued: number
   total_free_balance_consumed: number

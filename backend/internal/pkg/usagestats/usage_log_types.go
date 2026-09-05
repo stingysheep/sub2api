@@ -313,6 +313,7 @@ type UsageStats struct {
 	TotalPaidBalanceCost     float64        `json:"total_paid_balance_cost"`
 	TotalUnfundedCost        float64        `json:"total_unfunded_cost"`
 	TotalFreeUpstreamCost    float64        `json:"total_free_upstream_cost"`
+	SelectedFreeUpstreamCost float64        `json:"selected_free_upstream_cost"`
 	TotalPaidUpstreamCost    float64        `json:"total_paid_upstream_cost"`
 	TotalFreeBalanceIssued   float64        `json:"total_free_balance_issued"`
 	TotalFreeBalanceConsumed float64        `json:"total_free_balance_consumed"`

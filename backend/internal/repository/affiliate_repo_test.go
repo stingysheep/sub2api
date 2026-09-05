@@ -39,3 +39,16 @@ func TestAccrueUsageQuotaUsesPartialUniqueIndexConflictTarget(t *testing.T) {
 	require.Contains(t, content, "ON CONFLICT (source_usage_request_id) WHERE source_usage_request_id IS NOT NULL DO NOTHING")
 	require.NotContains(t, content, "ON CONFLICT (source_usage_request_id) DO NOTHING")
 }
+func TestAdminAffiliateAnalyticsQueryKeepsGrowthAndRankingScopes(t *testing.T) {
+	source, err := os.ReadFile("affiliate_repo.go")
+	require.NoError(t, err)
+	content := string(source)
+
+	require.Contains(t, content, "func (r *affiliateRepository) GetAdminAnalytics")
+	require.Contains(t, content, "invitee.role = 'user'")
+	require.Contains(t, content, "invitee.deleted_at IS NULL")
+	require.Contains(t, content, "u.created_at AT TIME ZONE $3")
+	require.Contains(t, content, "ua.inviter_id IS NULL")
+	require.Contains(t, content, "ua.inviter_id IS NOT NULL")
+	require.Contains(t, content, "LIMIT $5")
+}

@@ -405,6 +405,13 @@ export default {
       errors: {
         loadFailed: 'Failed to load affiliate records'
       },
+      analytics: {
+        inviteTitle: 'Top inviter contribution',
+        rebateTitle: 'Top rebate contribution',
+        periodHint: 'Current range compared with the previous range of equal length',
+        rank: 'Rank', inviter: 'Inviter', periodInvites: 'Invites in range', periodRebateRows: 'Rebate entries', change: 'vs previous', totalInvites: 'Lifetime invites', periodRebateAmount: 'Rebate in range', lastInvite: 'Last invite', totalRebate: 'Lifetime rebate', empty: 'No data available',
+        growthTitle: 'User growth composition', growthHint: 'Natural and invited registrations by date', date: 'Date', naturalGrowth: 'Natural growth', invitedGrowth: 'Invited growth', totalGrowth: 'New users', invitedShare: 'Invited share'
+      },
       records: {
         search: 'Search',
         searchPlaceholder: 'Email, username, user ID, or order number',

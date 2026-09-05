@@ -215,6 +215,45 @@ type AffiliateUserOverview struct {
 	HistoryQuota        float64 `json:"history_quota"`
 }
 
+type AffiliateAdminRanking struct {
+	Rank            int        `json:"rank"`
+	InviterID       int64      `json:"inviter_id"`
+	InviterEmail    string     `json:"inviter_email"`
+	InviterUsername string     `json:"inviter_username"`
+	CurrentCount    int64      `json:"current_count"`
+	PreviousCount   int64      `json:"previous_count"`
+	TotalCount      int64      `json:"total_count"`
+	CurrentAmount   float64    `json:"current_amount"`
+	PreviousAmount  float64    `json:"previous_amount"`
+	TotalAmount     float64    `json:"total_amount"`
+	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`
+}
+
+type AffiliateGrowthPoint struct {
+	Date         string  `json:"date"`
+	NaturalCount int64   `json:"natural_count"`
+	InvitedCount int64   `json:"invited_count"`
+	TotalCount   int64   `json:"total_count"`
+	InvitedShare float64 `json:"invited_share"`
+}
+
+type AffiliateAnalyticsFilter struct {
+	StartAt  time.Time
+	EndAt    time.Time
+	Timezone string
+	Limit    int
+}
+
+type AffiliateAdminAnalytics struct {
+	StartAt            time.Time               `json:"start_at"`
+	EndAt              time.Time               `json:"end_at"`
+	PreviousStartAt    time.Time               `json:"previous_start_at"`
+	PreviousEndAt      time.Time               `json:"previous_end_at"`
+	TopInviters        []AffiliateAdminRanking `json:"top_inviters"`
+	TopRebateEarners   []AffiliateAdminRanking `json:"top_rebate_earners"`
+	RegistrationGrowth []AffiliateGrowthPoint  `json:"registration_growth"`
+}
+
 type AffiliateService struct {
 	repo                  AffiliateRepository
 	settingService        *SettingService
@@ -657,6 +696,19 @@ func (s *AffiliateService) AdminListCustomUsers(ctx context.Context, filter Affi
 		return nil, 0, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
 	}
 	return s.repo.ListUsersWithCustomSettings(ctx, filter)
+}
+
+func (s *AffiliateService) AdminGetAnalytics(ctx context.Context, filter AffiliateAnalyticsFilter) (*AffiliateAdminAnalytics, error) {
+	if s == nil || s.repo == nil {
+		return nil, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+	}
+	repo, ok := s.repo.(interface {
+		GetAdminAnalytics(context.Context, AffiliateAnalyticsFilter) (*AffiliateAdminAnalytics, error)
+	})
+	if !ok {
+		return &AffiliateAdminAnalytics{}, nil
+	}
+	return repo.GetAdminAnalytics(ctx, filter)
 }
 
 func (s *AffiliateService) AdminListInviteRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateInviteRecord, int64, error) {

@@ -1,5 +1,6 @@
 <template>
   <AppLayout>
+    <AdminAffiliateAnalyticsPanel v-if="props.type !== 'transfers'" :type="props.type" :start-at="filters.start_at" :end-at="filters.end_at" />
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
@@ -160,6 +161,7 @@ import { affiliatesAPI, type AffiliateInviteRecord, type AffiliateRebateRecord, 
 import type { PaginatedResponse } from '@/types'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDisplayDateTime } from '@/utils/format'
+import AdminAffiliateAnalyticsPanel from './AdminAffiliateAnalyticsPanel.vue'
 
 type RecordType = 'invites' | 'rebates' | 'transfers'
 type AffiliateRecord = AffiliateInviteRecord | AffiliateRebateRecord | AffiliateTransferRecord

@@ -468,7 +468,7 @@ SELECT COALESCE(group_id, 0), group_name, COUNT(*),
        COALESCE(SUM(upstream_cost), 0),
        COALESCE(SUM(upstream_cost * free_charged / NULLIF(actual_cost, 0)), 0),
        COALESCE(SUM(upstream_cost * paid_revenue / NULLIF(actual_cost, 0)), 0),
-       COALESCE(SUM(paid_revenue - upstream_cost), 0)
+       COALESCE(SUM(paid_revenue - upstream_cost * paid_revenue / NULLIF(actual_cost, 0)), 0)
 FROM scoped GROUP BY group_id, group_name ORDER BY 8 DESC, 3 DESC`
 	modelQuery := cte + `
 SELECT 0, model, COUNT(*),
@@ -476,7 +476,7 @@ SELECT 0, model, COUNT(*),
        COALESCE(SUM(upstream_cost), 0),
        COALESCE(SUM(upstream_cost * free_charged / NULLIF(actual_cost, 0)), 0),
        COALESCE(SUM(upstream_cost * paid_revenue / NULLIF(actual_cost, 0)), 0),
-       COALESCE(SUM(paid_revenue - upstream_cost), 0)
+       COALESCE(SUM(paid_revenue - upstream_cost * paid_revenue / NULLIF(actual_cost, 0)), 0)
 FROM scoped GROUP BY model ORDER BY 8 DESC, 3 DESC`
 	read := func(query string) ([]usagestats.ProfitBreakdownItem, error) {
 		rows, err := r.sql.QueryContext(ctx, query, startTime, endTime)
@@ -939,7 +939,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 		WHERE %s`, strings.Join(allocConditions, " AND "))
 	if err := scanSingleRow(ctx, r.sql, allocQuery, allocArgs,
 		&stats.TotalFreeBalanceCost, &stats.TotalPaidBalanceCost, &stats.TotalUnfundedCost,
-		&stats.TotalFreeUpstreamCost, &stats.TotalPaidUpstreamCost,
+		&stats.SelectedFreeUpstreamCost, &stats.TotalPaidUpstreamCost,
 	); err != nil {
 		// The migration is applied before the service starts. Keep old databases
 		// readable during rolling upgrades when the new table is not present yet.
@@ -947,6 +947,21 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 			return nil, err
 		}
 	}
+	allFreeUpstreamQuery := `
+		SELECT COALESCE(SUM(
+			COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(a.rate_multiplier, 1)
+			* (uba.free_cost + uba.unfunded_cost) / NULLIF(ul.actual_cost, 0)
+		), 0)
+		FROM usage_balance_allocations uba
+		JOIN usage_logs ul ON ul.request_id = uba.request_id AND ul.api_key_id = uba.api_key_id
+		LEFT JOIN accounts a ON a.id = ul.account_id
+		JOIN users au ON au.id = uba.user_id AND au.deleted_at IS NULL AND au.role = 'user'`
+	if err := scanSingleRow(ctx, r.sql, allFreeUpstreamQuery, nil, &stats.TotalFreeUpstreamCost); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "does not exist") {
+			return nil, err
+		}
+	}
+
 	issuedQuery := `
 		SELECT
 			COALESCE(SUM(free_balance_issued), 0),

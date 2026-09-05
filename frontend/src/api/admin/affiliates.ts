@@ -79,6 +79,39 @@ export interface AffiliateTransferRecord {
   created_at: string
 }
 
+
+export interface AffiliateAdminRanking {
+  rank: number
+  inviter_id: number
+  inviter_email: string
+  inviter_username: string
+  current_count: number
+  previous_count: number
+  total_count: number
+  current_amount: number
+  previous_amount: number
+  total_amount: number
+  last_activity_at?: string | null
+}
+
+export interface AffiliateGrowthPoint {
+  date: string
+  natural_count: number
+  invited_count: number
+  total_count: number
+  invited_share: number
+}
+
+export interface AffiliateAdminAnalytics {
+  start_at: string
+  end_at: string
+  previous_start_at: string
+  previous_end_at: string
+  top_inviters: AffiliateAdminRanking[]
+  top_rebate_earners: AffiliateAdminRanking[]
+  registration_growth: AffiliateGrowthPoint[]
+}
+
 export interface AffiliateUserOverview {
   user_id: number
   email: string
@@ -208,6 +241,17 @@ export async function listTransferRecords(
   return data
 }
 
+
+export async function getAnalytics(
+  params: Pick<ListAffiliateRecordsParams, 'start_at' | 'end_at' | 'timezone'> = {},
+): Promise<AffiliateAdminAnalytics> {
+  const { data } = await apiClient.get<AffiliateAdminAnalytics>(
+    '/admin/affiliates/analytics',
+    { params: { start_at: params.start_at || undefined, end_at: params.end_at || undefined, timezone: params.timezone || undefined } },
+  )
+  return data
+}
+
 export async function getUserOverview(
   userId: number,
 ): Promise<AffiliateUserOverview> {
@@ -226,6 +270,7 @@ export const affiliatesAPI = {
   listInviteRecords,
   listRebateRecords,
   listTransferRecords,
+  getAnalytics,
   getUserOverview,
 }
 

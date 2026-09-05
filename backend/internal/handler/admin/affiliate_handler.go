@@ -201,6 +201,39 @@ func (h *AffiliateHandler) GetUserOverview(c *gin.Context) {
 	response.Success(c, overview)
 }
 
+// Analytics returns aggregate affiliate rankings and registration growth.
+// GET /api/v1/admin/affiliates/analytics
+func (h *AffiliateHandler) Analytics(c *gin.Context) {
+	start := parseAffiliateRecordStartTime(c.Query("start_at"), c.Query("timezone"))
+	end := parseAffiliateRecordEndTime(c.Query("end_at"), c.Query("timezone"))
+	now := time.Now()
+	if start == nil || end == nil {
+		defaultEnd := now
+		defaultStart := defaultEnd.AddDate(0, 0, -30)
+		start = &defaultStart
+		end = &defaultEnd
+	}
+	if !end.After(*start) {
+		response.BadRequest(c, "Invalid analytics date range")
+		return
+	}
+	tz := strings.TrimSpace(c.Query("timezone"))
+	if tz == "" {
+		tz = "UTC"
+	}
+	analytics, err := h.affiliateService.AdminGetAnalytics(c.Request.Context(), service.AffiliateAnalyticsFilter{
+		StartAt:  *start,
+		EndAt:    *end,
+		Timezone: tz,
+		Limit:    10,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, analytics)
+}
+
 // ListInviteRecords returns all inviter-invitee relationships.
 // GET /api/v1/admin/affiliates/invites
 func (h *AffiliateHandler) ListInviteRecords(c *gin.Context) {

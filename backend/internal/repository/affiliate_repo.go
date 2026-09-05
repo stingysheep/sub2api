@@ -468,6 +468,164 @@ func maskAffiliateEmail(email string) string {
 	return local[:2] + "***@" + parts[1]
 }
 
+func (r *affiliateRepository) GetAdminAnalytics(ctx context.Context, filter service.AffiliateAnalyticsFilter) (*service.AffiliateAdminAnalytics, error) {
+	startAt, endAt := filter.StartAt, filter.EndAt
+	if endAt.Before(startAt) || endAt.Equal(startAt) {
+		return &service.AffiliateAdminAnalytics{StartAt: startAt, EndAt: endAt}, nil
+	}
+	limit := filter.Limit
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	tz := strings.TrimSpace(filter.Timezone)
+	if tz == "" {
+		tz = "UTC"
+	}
+	period := endAt.Sub(startAt)
+	// Treat both ranges as half-open intervals so the boundary timestamp is
+	// counted exactly once. The existing date filter passes an inclusive end
+	// timestamp, so extend it by one nanosecond for the exclusive bound.
+	endExclusive := endAt.Add(time.Nanosecond)
+	previousStartAt := startAt.Add(-period)
+	previousEndExclusive := startAt
+	result := &service.AffiliateAdminAnalytics{
+		StartAt:            startAt,
+		EndAt:              endAt,
+		PreviousStartAt:    previousStartAt,
+		PreviousEndAt:      previousEndExclusive,
+		TopInviters:        make([]service.AffiliateAdminRanking, 0, limit),
+		TopRebateEarners:   make([]service.AffiliateAdminRanking, 0, limit),
+		RegistrationGrowth: make([]service.AffiliateGrowthPoint, 0),
+	}
+
+	inviteRows, err := r.client.QueryContext(ctx, `
+SELECT ROW_NUMBER() OVER (ORDER BY current_count DESC, total_count DESC, inviter_id),
+       inviter_id, COALESCE(inviter.email, ''), COALESCE(inviter.username, ''),
+       current_count, previous_count, total_count, last_activity_at
+FROM (
+    SELECT ua.inviter_id,
+           COUNT(*) FILTER (WHERE ua.created_at >= $1 AND ua.created_at < $2)::bigint AS current_count,
+           COUNT(*) FILTER (WHERE ua.created_at >= $3 AND ua.created_at < $4)::bigint AS previous_count,
+           COUNT(*)::bigint AS total_count,
+           MAX(ua.created_at) FILTER (WHERE ua.created_at >= $1 AND ua.created_at < $2) AS last_activity_at
+    FROM user_affiliates ua
+    JOIN users invitee ON invitee.id = ua.user_id
+                      AND invitee.role = 'user'
+                      AND invitee.deleted_at IS NULL
+    WHERE ua.inviter_id IS NOT NULL
+    GROUP BY ua.inviter_id
+) ranked
+JOIN users inviter ON inviter.id = ranked.inviter_id AND inviter.deleted_at IS NULL
+WHERE current_count > 0
+ORDER BY current_count DESC, total_count DESC, inviter_id
+LIMIT $5`, startAt, endExclusive, previousStartAt, previousEndExclusive, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query affiliate inviter analytics: %w", err)
+	}
+	for inviteRows.Next() {
+		var item service.AffiliateAdminRanking
+		var lastActivity sql.NullTime
+		if err := inviteRows.Scan(&item.Rank, &item.InviterID, &item.InviterEmail, &item.InviterUsername, &item.CurrentCount, &item.PreviousCount, &item.TotalCount, &lastActivity); err != nil {
+			_ = inviteRows.Close()
+			return nil, fmt.Errorf("scan affiliate inviter analytics: %w", err)
+		}
+		if lastActivity.Valid {
+			value := lastActivity.Time
+			item.LastActivityAt = &value
+		}
+		item.InviterEmail = maskAffiliateEmail(item.InviterEmail)
+		result.TopInviters = append(result.TopInviters, item)
+	}
+	if err := inviteRows.Err(); err != nil {
+		_ = inviteRows.Close()
+		return nil, fmt.Errorf("read affiliate inviter analytics: %w", err)
+	}
+	_ = inviteRows.Close()
+
+	rebateRows, err := r.client.QueryContext(ctx, `
+SELECT ROW_NUMBER() OVER (ORDER BY current_amount DESC, current_count DESC, inviter_id),
+       inviter_id, COALESCE(inviter.email, ''), COALESCE(inviter.username, ''),
+       current_count, previous_count, total_count,
+       current_amount, previous_amount, total_amount, last_activity_at
+FROM (
+    SELECT ual.user_id AS inviter_id,
+           COUNT(*) FILTER (WHERE ual.created_at >= $1 AND ual.created_at < $2)::bigint AS current_count,
+           COUNT(*) FILTER (WHERE ual.created_at >= $3 AND ual.created_at < $4)::bigint AS previous_count,
+           COUNT(*)::bigint AS total_count,
+           COALESCE(SUM(ual.amount) FILTER (WHERE ual.created_at >= $1 AND ual.created_at < $2), 0)::double precision AS current_amount,
+           COALESCE(SUM(ual.amount) FILTER (WHERE ual.created_at >= $3 AND ual.created_at < $4), 0)::double precision AS previous_amount,
+           COALESCE(SUM(ual.amount), 0)::double precision AS total_amount,
+           MAX(ual.created_at) FILTER (WHERE ual.created_at >= $1 AND ual.created_at < $2) AS last_activity_at
+    FROM user_affiliate_ledger ual
+    JOIN users invitee ON invitee.id = ual.source_user_id
+                      AND invitee.role = 'user'
+                      AND invitee.deleted_at IS NULL
+    WHERE ual.action = 'accrue'
+      AND ual.source_user_id IS NOT NULL
+    GROUP BY ual.user_id
+) ranked
+JOIN users inviter ON inviter.id = ranked.inviter_id AND inviter.deleted_at IS NULL
+WHERE current_count > 0
+ORDER BY current_amount DESC, current_count DESC, inviter_id
+LIMIT $5`, startAt, endExclusive, previousStartAt, previousEndExclusive, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query affiliate rebate analytics: %w", err)
+	}
+	for rebateRows.Next() {
+		var item service.AffiliateAdminRanking
+		var lastActivity sql.NullTime
+		if err := rebateRows.Scan(&item.Rank, &item.InviterID, &item.InviterEmail, &item.InviterUsername, &item.CurrentCount, &item.PreviousCount, &item.TotalCount, &item.CurrentAmount, &item.PreviousAmount, &item.TotalAmount, &lastActivity); err != nil {
+			_ = rebateRows.Close()
+			return nil, fmt.Errorf("scan affiliate rebate analytics: %w", err)
+		}
+		if lastActivity.Valid {
+			value := lastActivity.Time
+			item.LastActivityAt = &value
+		}
+		item.InviterEmail = maskAffiliateEmail(item.InviterEmail)
+		result.TopRebateEarners = append(result.TopRebateEarners, item)
+	}
+	if err := rebateRows.Err(); err != nil {
+		_ = rebateRows.Close()
+		return nil, fmt.Errorf("read affiliate rebate analytics: %w", err)
+	}
+	_ = rebateRows.Close()
+
+	growthRows, err := r.client.QueryContext(ctx, `
+SELECT (u.created_at AT TIME ZONE $3)::date::text AS day,
+       COUNT(*) FILTER (WHERE ua.inviter_id IS NULL)::bigint AS natural_count,
+       COUNT(*) FILTER (WHERE ua.inviter_id IS NOT NULL)::bigint AS invited_count,
+       COUNT(*)::bigint AS total_count
+FROM users u
+LEFT JOIN user_affiliates ua ON ua.user_id = u.id
+WHERE u.role = 'user'
+  AND u.deleted_at IS NULL
+  AND u.created_at >= $1
+  AND u.created_at < $2
+GROUP BY day
+ORDER BY day`, startAt, endExclusive, tz)
+	if err != nil {
+		return nil, fmt.Errorf("query affiliate registration growth: %w", err)
+	}
+	for growthRows.Next() {
+		var item service.AffiliateGrowthPoint
+		if err := growthRows.Scan(&item.Date, &item.NaturalCount, &item.InvitedCount, &item.TotalCount); err != nil {
+			_ = growthRows.Close()
+			return nil, fmt.Errorf("scan affiliate registration growth: %w", err)
+		}
+		if item.TotalCount > 0 {
+			item.InvitedShare = float64(item.InvitedCount) / float64(item.TotalCount)
+		}
+		result.RegistrationGrowth = append(result.RegistrationGrowth, item)
+	}
+	if err := growthRows.Err(); err != nil {
+		_ = growthRows.Close()
+		return nil, fmt.Errorf("read affiliate registration growth: %w", err)
+	}
+	_ = growthRows.Close()
+	return result, nil
+}
+
 func (r *affiliateRepository) ListAffiliateInviteRecords(ctx context.Context, filter service.AffiliateRecordFilter) ([]service.AffiliateInviteRecord, int64, error) {
 	client := clientFromContext(ctx, r.client)
 	where, args := buildAffiliateRecordWhere(filter, "ua.created_at", []string{
