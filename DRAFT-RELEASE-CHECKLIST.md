@@ -11,8 +11,8 @@
 
 ## 发布前必须完成
 
-- [ ] 推送 `custom` 最新提交 `60085aadd` 到 GitHub。
-- [ ] 审阅 `main..custom` 差异，确认不包含密钥、令牌、生产环境文件、数据库备份或临时运维文件。
+- [x] 推送 `custom` 最新提交到 GitHub。
+- [ ] 完成发布前人工审阅 `main..custom` 差异，重点确认不包含密钥、令牌、生产环境文件、数据库备份或临时运维文件。
 - [ ] 本地 Go 测试与构建。当前环境未安装 Go。
 - [ ] 前端类型检查与定向测试。
 - [ ] 非生产环境构建镜像并做回归验证。
@@ -23,7 +23,7 @@
 
 - 公开 Fork：`https://github.com/stingysheep/sub2api`。
 - GitHub `main`：`ab99d56e9626e6cd731592dae8553c9758a0efa2`。
-- GitHub `custom`：远端当前仍为 `00c1733cfe78ea6f55300954b6151d97c8f9a406`；本地新增提交尚未上传。
+- GitHub `custom`：`ba00ef5fdc323a6d618691979b16d0d4c1ab88bc`。
 - `pnpm --dir frontend exec vue-tsc --noEmit`：通过。
 - 账号/分组/公共界面相关定向 Vitest：通过。
 - `CreateAccountModal.spec.ts`：31 个测试通过。
