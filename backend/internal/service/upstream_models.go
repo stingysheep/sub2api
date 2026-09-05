@@ -197,6 +197,43 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 	return models, err
 }
 
+// SyncUpstreamModelMapping refreshes the account's explicit model mapping from
+// the live upstream catalog. The mapping is cleared before the request so a
+// failed refresh cannot leave stale model IDs advertised as current; a failed
+// refresh therefore leaves an explicit empty mapping until the next successful
+// sync.
+func (s *AccountTestService) SyncUpstreamModelMapping(ctx context.Context, account *Account) (*UpstreamModelCatalog, error) {
+	if account == nil {
+		return nil, newUpstreamModelSyncConfigError("Account is required", nil)
+	}
+
+	credentials := shallowCopyMap(account.Credentials)
+	credentials["model_mapping"] = map[string]any{}
+	if err := persistAccountCredentials(ctx, s.accountRepo, account, credentials); err != nil {
+		return nil, newUpstreamModelSyncInternalError("Failed to clear upstream model mapping", err)
+	}
+
+	catalog, err := s.SyncUpstreamModelCatalog(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+
+	mapping := make(map[string]any, len(catalog.Models))
+	for _, modelID := range catalog.Models {
+		modelID = strings.TrimSpace(modelID)
+		if modelID == "" {
+			continue
+		}
+		mapping[modelID] = modelID
+	}
+	credentials = shallowCopyMap(account.Credentials)
+	credentials["model_mapping"] = mapping
+	if err := persistAccountCredentials(ctx, s.accountRepo, account, credentials); err != nil {
+		return nil, newUpstreamModelSyncInternalError("Failed to save upstream model mapping", err)
+	}
+	return catalog, nil
+}
+
 // SyncUpstreamModelCatalog fetches the account's live model list, enriches
 // missing capability fields from the provider registry used by the upstream,
 // and persists a normalized account snapshot when complete metadata is available.
