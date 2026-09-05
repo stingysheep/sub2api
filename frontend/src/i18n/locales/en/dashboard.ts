@@ -691,7 +691,7 @@ export default {
       earnTitle: 'Earn continuously', earnDescription: 'Qualified usage accrues automatically',
     },
     leaderboard: {
-      title: 'Promotion leaderboard', description: 'Top 15 by historical rebate', invites: '{count} invited users', empty: 'No leaderboard data yet',
+      title: 'Promotion leaderboard', description: 'Top 15 by historical rebate', invites: '{count} invited users', empty: 'No leaderboard data yet', columns: { rank: 'Rank', account: 'Account', invites: 'Invites', historyRebate: 'Historical Rebate' },
     },
     description: 'Invite new users and convert your rebate quota into account balance',
     yourCode: 'Your Affiliate Code',

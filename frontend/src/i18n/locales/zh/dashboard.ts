@@ -695,7 +695,7 @@ export default {
       earnTitle: '持续返利', earnDescription: '符合条件后自动累计',
     },
     leaderboard: {
-      title: '推广排行榜', description: '全站历史累计返利前 15 名', invites: '{count} 位邀请用户', empty: '暂无排行榜数据',
+      title: '推广排行榜', description: '全站历史累计返利前 15 名', invites: '{count} 位邀请用户', empty: '暂无排行榜数据', columns: { rank: '排名', account: '账号', invites: '邀请人数', historyRebate: '历史累计返利' },
     },
     description: '邀请新用户注册，并将返利额度转入账户余额',
     yourCode: '我的邀请码',

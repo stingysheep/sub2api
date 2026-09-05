@@ -57,7 +57,13 @@ describe('AffiliateView', () => {
       aff_frozen_quota: 0,
       aff_history_quota: 0,
       effective_rebate_rate_percent: 10,
-      invitees: [],
+      invitees: [
+        { user_id: 2, email: 'invitee@example.com', username: 'invitee', total_rebate: 0.00000087, created_at: '2026-09-05T00:00:00Z' },
+      ],
+      leaderboard: [
+        { rank: 1, email: 'top@example.com', invited_count: 10, history_rebate: 1.234567 },
+        { rank: 2, email: 'second@example.com', invited_count: 5, history_rebate: 0.617283 },
+      ],
     })
   })
 
@@ -112,6 +118,30 @@ describe('AffiliateView', () => {
       'affiliate.linkCopied',
     )
     expect(copyToClipboard).toHaveBeenNthCalledWith(2, affiliateCode, 'affiliate.codeCopied')
+  })
+
+  it('renders leaderboard columns, proportional progress, and requested precision', async () => {
+    const wrapper = mount(AffiliateView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<main><slot /></main>' },
+          Icon: true,
+          AffiliateNetworkArt: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('affiliate.leaderboard.columns.rank')
+    expect(wrapper.text()).toContain('$1.235')
+    expect(wrapper.text()).toContain('$0.617')
+    expect(wrapper.text()).toContain('$0.00000087')
+    const bars = wrapper.findAll('[style]').filter((node) => (node.attributes('style') || '').includes('width:'))
+    expect(bars).toHaveLength(2)
+    expect((bars[0].attributes('style') || '')).toContain('width: 100%')
+    expect((bars[1].attributes('style') || '')).toContain('width: 49.999')
   })
 
   it('renders the animated artwork beside the promotion hero on desktop', async () => {

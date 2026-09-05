@@ -58,27 +58,30 @@
           </template>
           <template #cell-order="{ row }">
             <div class="space-y-0.5">
-              <div class="font-mono text-sm text-gray-900 dark:text-white">#{{ row.order_id }}</div>
-              <div class="max-w-56 truncate text-sm text-gray-500 dark:text-dark-400">{{ row.out_trade_no }}</div>
+              <div class="font-mono text-sm text-gray-900 dark:text-white">{{ row.source_type === 'usage' ? t('admin.affiliates.records.usageRebate') : `#${row.order_id}` }}</div>
+              <div class="max-w-56 truncate text-sm text-gray-500 dark:text-dark-400">{{ row.source_type === 'usage' ? (row.usage_request_id || '-') : (row.out_trade_no || '-') }}</div>
             </div>
           </template>
           <template #cell-payment_type="{ row }">
-            {{ t('payment.methods.' + row.payment_type, row.payment_type || '-') }}
+            {{ row.source_type === 'usage' ? t('admin.affiliates.records.usageRebate') : t('payment.methods.' + row.payment_type, row.payment_type || '-') }}
           </template>
           <template #cell-order_status="{ row }">
-            <OrderStatusBadge :status="row.order_status" />
+            <span v-if="row.source_type === 'usage'" class="text-sm text-emerald-600 dark:text-emerald-400">{{ t('admin.affiliates.records.usageAccrued') }}</span>
+            <OrderStatusBadge v-else :status="row.order_status" />
           </template>
           <template #cell-total_rebate="{ row }">
             <AmountText :value="row.total_rebate" />
           </template>
           <template #cell-order_amount="{ row }">
-            <AmountText :value="row.order_amount" />
+            <span v-if="row.source_type === 'usage'" class="text-sm text-gray-400 dark:text-dark-500">-</span>
+            <AmountText v-else :value="row.order_amount" />
           </template>
           <template #cell-pay_amount="{ row }">
-            <span class="text-sm text-gray-900 dark:text-white">¥{{ formatAmount(row.pay_amount) }}</span>
+            <span v-if="row.source_type === 'usage'" class="text-sm text-gray-400 dark:text-dark-500">-</span>
+            <span v-else class="text-sm text-gray-900 dark:text-white">¥{{ formatAmount(row.pay_amount) }}</span>
           </template>
           <template #cell-rebate_amount="{ row }">
-            <AmountText :value="row.rebate_amount" strong />
+            <span class="text-sm font-semibold text-emerald-600 dark:text-emerald-400">${{ formatAffiliateAmount(row.rebate_amount, row.source_type === 'usage' ? 8 : 2) }}</span>
           </template>
           <template #cell-amount="{ row }">
             <AmountText :value="row.amount" strong />
@@ -305,6 +308,10 @@ function handleSort(key: string, order: 'asc' | 'desc') {
 
 function formatAmount(value: number | null | undefined): string {
   return Number(value || 0).toFixed(2)
+}
+
+function formatAffiliateAmount(value: number | null | undefined, decimals: number): string {
+  return Number(value || 0).toFixed(decimals)
 }
 
 function formatPercent(value: number | null | undefined): string {

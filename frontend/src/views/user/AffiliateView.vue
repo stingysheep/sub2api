@@ -89,7 +89,7 @@
               <div v-else class="mt-4 overflow-x-auto">
                 <table class="w-full min-w-[560px] text-left text-sm">
                   <thead><tr class="border-b border-gray-200 text-gray-500 dark:border-dark-700 dark:text-dark-400"><th class="px-3 py-2 font-medium">{{ t('affiliate.invitees.columns.email') }}</th><th class="px-3 py-2 font-medium">{{ t('affiliate.invitees.columns.username') }}</th><th class="px-3 py-2 text-right font-medium">{{ t('affiliate.invitees.columns.rebate') }}</th><th class="px-3 py-2 font-medium">{{ t('affiliate.invitees.columns.joinedAt') }}</th></tr></thead>
-                  <tbody><tr v-for="item in detail.invitees" :key="item.user_id" class="border-b border-gray-100 last:border-b-0 dark:border-dark-800"><td class="px-3 py-3 text-gray-900 dark:text-white">{{ item.email || '-' }}</td><td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ item.username || '-' }}</td><td class="px-3 py-3 text-right font-medium text-emerald-600 dark:text-emerald-400">{{ formatCurrency(item.total_rebate) }}</td><td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ formatDateTime(item.created_at) || '-' }}</td></tr></tbody>
+                  <tbody><tr v-for="item in detail.invitees" :key="item.user_id" class="border-b border-gray-100 last:border-b-0 dark:border-dark-800"><td class="px-3 py-3 text-gray-900 dark:text-white">{{ item.email || '-' }}</td><td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ item.username || '-' }}</td><td class="px-3 py-3 text-right font-medium text-emerald-600 dark:text-emerald-400">{{ formatCurrencyPrecision(item.total_rebate, 8) }}</td><td class="px-3 py-3 text-gray-700 dark:text-gray-300">{{ formatDateTime(item.created_at) || '-' }}</td></tr></tbody>
                 </table>
               </div>
             </section>
@@ -103,11 +103,19 @@
               </div>
               <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">{{ t('affiliate.leaderboard.description') }}</p>
             </div>
+            <div class="grid grid-cols-[2.25rem_minmax(0,1fr)_3.25rem_6.5rem] items-center gap-2 border-b border-gray-200 px-5 py-2 text-[11px] font-medium text-gray-400 dark:border-dark-700 dark:text-dark-500">
+              <span>{{ t('affiliate.leaderboard.columns.rank') }}</span>
+              <span>{{ t('affiliate.leaderboard.columns.account') }}</span>
+              <span class="text-right">{{ t('affiliate.leaderboard.columns.invites') }}</span>
+              <span class="text-right">{{ t('affiliate.leaderboard.columns.historyRebate') }}</span>
+            </div>
             <div class="divide-y divide-gray-100 dark:divide-dark-700">
-              <div v-for="item in (detail.leaderboard || [])" :key="item.rank" class="flex items-center gap-3 px-5 py-3">
-                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold" :class="item.rank === 1 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : item.rank === 2 ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' : item.rank === 3 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' : 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'">{{ item.rank }}</span>
-                <div class="min-w-0 flex-1"><p class="truncate text-sm text-gray-800 dark:text-gray-200">{{ item.email }}</p><p class="text-xs text-gray-500 dark:text-dark-400">{{ t('affiliate.leaderboard.invites', { count: item.invited_count }) }}</p></div>
-                <span class="shrink-0 text-sm font-semibold text-emerald-600 dark:text-emerald-400">{{ formatCurrency(item.history_rebate) }}</span>
+              <div v-for="item in (detail.leaderboard || [])" :key="item.rank" class="relative grid grid-cols-[2.25rem_minmax(0,1fr)_3.25rem_6.5rem] items-center gap-2 px-5 py-3.5" :class="item.rank === 1 ? 'bg-amber-50/80 dark:bg-amber-950/20' : item.rank === 2 ? 'bg-slate-50/80 dark:bg-slate-900/30' : item.rank === 3 ? 'bg-orange-50/80 dark:bg-orange-950/20' : 'bg-white dark:bg-dark-800'">
+                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ring-1 ring-inset" :class="item.rank === 1 ? 'bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:ring-amber-700/60' : item.rank === 2 ? 'bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600' : item.rank === 3 ? 'bg-orange-100 text-orange-700 ring-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:ring-orange-700/60' : 'bg-gray-100 text-gray-700 ring-gray-200 dark:bg-dark-700 dark:text-gray-200 dark:ring-dark-600'">{{ item.rank }}</span>
+                <p class="min-w-0 truncate text-sm text-gray-800 dark:text-gray-200">{{ item.email }}</p>
+                <span class="text-right text-sm text-gray-600 dark:text-gray-300">{{ item.invited_count }}</span>
+                <span class="text-right text-sm font-semibold text-emerald-600 dark:text-emerald-400">{{ formatCurrencyPrecision(item.history_rebate, 3) }}</span>
+                <div class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-emerald-100/80 dark:bg-emerald-950/60"><div class="h-full bg-emerald-400/80 transition-[width] duration-500 dark:bg-emerald-400/70" :style="{ width: `${leaderboardProgress(item.history_rebate)}%` }"></div></div>
               </div>
               <p v-if="(detail.leaderboard || []).length === 0" class="px-5 py-8 text-center text-sm text-gray-500">{{ t('affiliate.leaderboard.empty') }}</p>
             </div>
@@ -146,7 +154,7 @@ import type { UserAffiliateDetail } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useClipboard } from '@/composables/useClipboard'
-import { formatCurrency, formatDateTime } from '@/utils/format'
+import { formatCurrency, formatCurrencyPrecision, formatDateTime } from '@/utils/format'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import AffiliateNetworkArt from '@/components/affiliate/AffiliateNetworkArt.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -176,6 +184,19 @@ const formattedDisplayRebateRate = computed(() => {
 })
 function formatCount(value: number): string {
   return value.toLocaleString()
+}
+
+const leaderboardMaxRebate = computed(() => {
+  const rows = detail.value?.leaderboard || []
+  const firstPlace = rows.find((item) => item.rank === 1)?.history_rebate
+  const maxValue = firstPlace ?? Math.max(...rows.map((item) => Number(item.history_rebate) || 0), 0)
+  return Math.max(Number(maxValue) || 0, 0)
+})
+
+function leaderboardProgress(value: number | null | undefined): number {
+  const max = leaderboardMaxRebate.value
+  if (max <= 0) return 0
+  return Math.min(100, Math.max(0, ((Number(value) || 0) / max) * 100))
 }
 
 async function loadAffiliateDetail(silent = false): Promise<void> {

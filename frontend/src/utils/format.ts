@@ -75,6 +75,25 @@ export function formatCurrency(amount: number | null | undefined, currency: stri
 }
 
 /**
+ * 格式化货币金额并固定显示指定小数位，适用于返利明细等高精度展示。
+ * 仅改变显示，不改变后端金额计算或存储精度。
+ */
+export function formatCurrencyPrecision(
+  amount: number | null | undefined,
+  fractionDigits: number,
+  currency: string = 'USD'
+): string {
+  const safeAmount = amount === null || amount === undefined || !Number.isFinite(amount) ? 0 : amount
+  const digits = Math.max(0, Math.min(20, Math.trunc(fractionDigits)))
+  return new Intl.NumberFormat(getLocale(), {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  }).format(safeAmount)
+}
+
+/**
  * 格式化字节大小
  * @param bytes 字节数
  * @param decimals 小数位数
