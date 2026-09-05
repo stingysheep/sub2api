@@ -926,7 +926,7 @@ function handleGroupClick(item: NavItem) {
   if (route.path !== item.path) {
     router.push(item.path)
   }
-  groupExpandOverrides.value.set(item.path, true
+  groupExpandOverrides.value.set(item.path, true)
 }
 
 // Initialize theme

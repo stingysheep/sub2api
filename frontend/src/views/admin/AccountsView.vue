@@ -650,7 +650,6 @@ const startProfileNavResize = (event: PointerEvent) => {
   window.addEventListener('pointerup', endProfileNavResize)
   event.preventDefault()
 }
-}
 const accountTableRef = ref<HTMLElement | null>(null)
 const dataTableRef = ref<InstanceType<typeof DataTable> | null>(null)
 type AccountBulkEditTarget =
@@ -1301,7 +1300,7 @@ const {
   selectVisible: selectCurrentPage,
   batchUpdate
 } = useTableSelection<AccountListItem>({
-  rows: displayedAccounts as AccountListItem[],
+  rows: displayedAccounts,
   getId: (account) => account.id
 })
 
@@ -2079,7 +2078,6 @@ const handleUpstreamProfileSelect = (profileID: UpstreamProfileSelection) => {
   activeUpstreamProfileId.value = profileID
   profilePage.value = 1
   clearSelection()
-}
 }
 const openMenu = (a: Account, e: MouseEvent) => {
   menu.acc = a
