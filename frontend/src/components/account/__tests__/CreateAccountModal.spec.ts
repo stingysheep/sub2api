@@ -259,7 +259,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('openai account')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="create-account-api-key"]').setValue('test-api-key')
     await wrapper.get('[data-testid="upstream-request-id-header"]').setValue('  X-Oneapi-Request-Id  ')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
@@ -280,13 +280,14 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await selectButtonByText(wrapper, 'OpenAI')
     await selectButtonByText(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('openai account')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="create-account-api-key"]').setValue('test-api-key')
     await wrapper.get('[data-testid="openai-images-url-to-b64-json-toggle"]').trigger('click')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.images_url_to_b64_json).toBe(true)
+  })
 
   it('creates one numbered account per API key and skips occupied names', async () => {
     const wrapper = mount(CreateAccountModal, {
