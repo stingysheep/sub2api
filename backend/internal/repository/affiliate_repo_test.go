@@ -26,3 +26,12 @@ func TestAffiliateRecordQueriesUseLedgerAuditFields(t *testing.T) {
 	require.NotContains(t, content, "parseAffiliateRebateAmount")
 	require.NotContains(t, content, `"current_balance": "u.balance"`)
 }
+
+func TestAccrueUsageQuotaUsesPartialUniqueIndexConflictTarget(t *testing.T) {
+	source, err := os.ReadFile("affiliate_repo.go")
+	require.NoError(t, err)
+	content := string(source)
+
+	require.Contains(t, content, "ON CONFLICT (source_usage_request_id) WHERE source_usage_request_id IS NOT NULL DO NOTHING")
+	require.NotContains(t, content, "ON CONFLICT (source_usage_request_id) DO NOTHING")
+}

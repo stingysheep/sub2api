@@ -170,6 +170,62 @@ func TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction(t *testing.T) {
 		"AccrueQuota must propagate the outer tx — found persisted rows after rollback")
 }
 
+func TestAffiliateRepository_AccrueUsageQuota_IsIdempotentByRequestID(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	client := tx.Client()
+
+	repo := NewAffiliateRepository(client, integrationDB)
+	usageRepo, ok := repo.(interface {
+		AccrueUsageQuota(context.Context, int64, int64, float64, int, string) (bool, error)
+	})
+	require.True(t, ok, "affiliate repository must support usage quota accrual")
+
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-usage-inviter-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	invitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("affiliate-usage-invitee-%d@example.com", time.Now().UnixNano()+1),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	_, err := repo.EnsureUserAffiliate(txCtx, inviter.ID)
+	require.NoError(t, err)
+	_, err = repo.EnsureUserAffiliate(txCtx, invitee.ID)
+	require.NoError(t, err)
+
+	requestID := fmt.Sprintf("affiliate-usage-request-%d", time.Now().UnixNano())
+	firstApplied, err := usageRepo.AccrueUsageQuota(txCtx, inviter.ID, invitee.ID, 3.5, 2, requestID)
+	require.NoError(t, err)
+	require.True(t, firstApplied)
+
+	secondApplied, err := usageRepo.AccrueUsageQuota(txCtx, inviter.ID, invitee.ID, 3.5, 2, requestID)
+	require.NoError(t, err)
+	require.False(t, secondApplied)
+
+	quota := querySingleFloat(t, txCtx, client,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID)
+	require.InDelta(t, 0.0, quota, 1e-9)
+	frozenQuota := querySingleFloat(t, txCtx, client,
+		"SELECT aff_frozen_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID)
+	require.InDelta(t, 3.5, frozenQuota, 1e-9)
+	historyQuota := querySingleFloat(t, txCtx, client,
+		"SELECT aff_history_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID)
+	require.InDelta(t, 3.5, historyQuota, 1e-9)
+	ledgerCount := querySingleInt(t, txCtx, client, `
+SELECT COUNT(*)
+FROM user_affiliate_ledger
+WHERE user_id = $1 AND source_usage_request_id = $2 AND action = 'accrue'`, inviter.ID, requestID)
+	require.Equal(t, 1, ledgerCount)
+}
+
 func TestAffiliateRepository_TransferQuotaToBalance_EmptyQuota(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)

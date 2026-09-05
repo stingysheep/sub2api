@@ -182,7 +182,7 @@ func (r *affiliateRepository) AccrueUsageQuota(ctx context.Context, inviterID, i
 		rows, err := txClient.QueryContext(txCtx, `
 			INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_usage_request_id, frozen_until, created_at, updated_at)
 			VALUES ($1, 'accrue', $2, $3, $4, CASE WHEN $5 > 0 THEN NOW() + make_interval(hours => $5) ELSE NULL END, NOW(), NOW())
-			ON CONFLICT (source_usage_request_id) DO NOTHING
+			ON CONFLICT (source_usage_request_id) WHERE source_usage_request_id IS NOT NULL DO NOTHING
 			RETURNING id`, inviterID, amount, inviteeUserID, requestID, freezeHours)
 		if err != nil {
 			return err
