@@ -43,12 +43,6 @@
           <Line :data="growthChartData" :options="growthChartOptions" aria-label="Daily user growth chart" role="img" />
         </div>
         <div v-else class="rounded-lg border border-gray-100 px-3 py-8 text-center text-sm text-gray-500 dark:border-dark-700">{{ t('admin.affiliates.analytics.empty') }}</div>
-        <div class="mt-4 overflow-x-auto">
-          <table class="w-full min-w-[620px] text-sm">
-            <thead><tr class="border-b border-gray-100 text-left text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400"><th class="px-3 py-2">{{ t('admin.affiliates.analytics.date') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.naturalGrowth') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.invitedGrowth') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.totalGrowth') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.invitedShare') }}</th></tr></thead>
-            <tbody><tr v-for="row in analytics.registration_growth" :key="row.date" class="border-b border-gray-50 dark:border-dark-800"><td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ row.date }}</td><td class="px-3 py-2 text-right">{{ row.natural_count }}</td><td class="px-3 py-2 text-right font-medium text-blue-600 dark:text-blue-400">{{ row.invited_count }}</td><td class="px-3 py-2 text-right font-semibold">{{ row.total_count }}</td><td class="px-3 py-2 text-right text-gray-500">{{ formatShare(row.invited_share) }}</td></tr><tr v-if="!analytics.registration_growth.length"><td colspan="5" class="px-3 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.affiliates.analytics.empty') }}</td></tr></tbody>
-          </table>
-        </div>
       </div>
     </div>
   </section>
@@ -91,7 +85,6 @@ function timezone() { try { return Intl.DateTimeFormat().resolvedOptions().timeZ
 function delta(row: AffiliateAdminRanking) { return row.current_count - row.previous_count }
 function formatDelta(value: number) { return value > 0 ? `+${value}` : String(value) }
 function money(value: number) { return `$${Number(value || 0).toFixed(8)}` }
-function formatShare(value: number) { return `${(Number(value || 0) * 100).toFixed(1)}%` }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleDateString() : '-' }
 async function load() {
   loading.value = true
