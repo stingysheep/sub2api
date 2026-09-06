@@ -101,6 +101,7 @@ type channelMonitorResponse struct {
 	PrimaryModel          string                               `json:"primary_model"`
 	ExtraModels           []string                             `json:"extra_models"`
 	GroupName             string                               `json:"group_name"`
+	RateMultiplier        *float64                             `json:"rate_multiplier,omitempty"`
 	MonitorGroupID        *int64                               `json:"monitor_group_id"`
 	MonitorGroupName      string                               `json:"monitor_group_name"`
 	MonitorGroupSortOrder int                                  `json:"monitor_group_sort_order"`
@@ -229,6 +230,7 @@ func channelMonitorToResponse(m *service.ChannelMonitor) *channelMonitorResponse
 		PrimaryModel:          m.PrimaryModel,
 		ExtraModels:           extras,
 		GroupName:             m.GroupName,
+		RateMultiplier:        m.RateMultiplier,
 		MonitorGroupID:        m.MonitorGroupID,
 		MonitorGroupName:      m.MonitorGroupName,
 		MonitorGroupSortOrder: m.MonitorGroupSortOrder,

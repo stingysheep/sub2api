@@ -79,6 +79,7 @@
           <template #cell-name="{ row, value }">
             <div class="flex items-center gap-1.5">
               <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <span v-if="row.rate_multiplier != null" class="text-blue-600 dark:text-blue-400">（{{ formatMultiplier(row.rate_multiplier) }}x）</span>
               <HelpTooltip v-if="row.api_key_decrypt_failed" :content="t('admin.channelMonitor.apiKeyDecryptFailed')">
                 <Icon name="exclamationTriangle" size="sm" class="text-red-500" />
               </HelpTooltip>
@@ -215,6 +216,7 @@ import MonitorActionsCell from '@/components/admin/monitor/MonitorActionsCell.vu
 import MonitorOrganizationPanel from '@/components/admin/monitor/MonitorOrganizationPanel.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
+import { formatMultiplier } from '@/utils/formatters'
 import MonitorSettingsPanel from '@/features/channel-monitor-v2/MonitorSettingsPanel.vue'
 import { isChannelMonitorV1Mode } from '@/utils/featureFlags'
 

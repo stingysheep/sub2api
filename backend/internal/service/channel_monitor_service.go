@@ -79,8 +79,9 @@ type channelMonitorRuntimeReader interface {
 
 // ChannelMonitorService 渠道监控管理服务。
 type ChannelMonitorService struct {
-	repo      ChannelMonitorRepository
-	encryptor SecretEncryptor
+	repo          ChannelMonitorRepository
+	encryptor     SecretEncryptor
+	apiKeyService *APIKeyService
 	// settings is optional; when nil, RunCheck fails closed for active probes
 	// (mode defaults to v2 / retired) so tests without settings never hit upstream.
 	settings channelMonitorRuntimeReader
@@ -104,6 +105,15 @@ const ChannelMonitorDuplicateOperationIDMetadataKey = "sub2api:duplicate_operati
 // NewChannelMonitorService 创建渠道监控服务实例。
 func NewChannelMonitorService(repo ChannelMonitorRepository, encryptor SecretEncryptor) *ChannelMonitorService {
 	return &ChannelMonitorService{repo: repo, encryptor: encryptor}
+}
+
+// SetAPIKeyService injects the API key resolver used to derive the current
+// effective group multiplier for monitor labels. The multiplier is display-only
+// metadata and is never accepted from the monitor form.
+func (s *ChannelMonitorService) SetAPIKeyService(apiKeyService *APIKeyService) {
+	if s != nil {
+		s.apiKeyService = apiKeyService
+	}
 }
 
 // SetRuntimeReader injects the settings reader used to gate active probes.
@@ -140,6 +150,7 @@ func (s *ChannelMonitorService) List(ctx context.Context, params ChannelMonitorL
 	for _, it := range items {
 		s.decryptInPlace(it)
 	}
+	s.resolveRateMultipliers(ctx, items)
 	return items, total, nil
 }
 
@@ -150,7 +161,35 @@ func (s *ChannelMonitorService) Get(ctx context.Context, id int64) (*ChannelMoni
 		return nil, err
 	}
 	s.decryptInPlace(m)
+	s.resolveRateMultipliers(ctx, []*ChannelMonitor{m})
 	return m, nil
+}
+
+// resolveRateMultipliers derives effective rates from the selected Sub2API API key.
+// It intentionally fails soft: monitors without a matching key/group simply omit
+// the rate instead of blocking the monitor list.
+func (s *ChannelMonitorService) resolveRateMultipliers(ctx context.Context, monitors []*ChannelMonitor) {
+	if s == nil || s.apiKeyService == nil {
+		return
+	}
+	for _, monitor := range monitors {
+		if monitor == nil || strings.TrimSpace(monitor.APIKey) == "" {
+			continue
+		}
+		key, err := s.apiKeyService.GetByKey(ctx, monitor.APIKey)
+		if err != nil || key == nil || key.Group == nil {
+			continue
+		}
+		rate := key.Group.RateMultiplier
+		if key.UserID > 0 {
+			if userRates, rateErr := s.apiKeyService.GetUserGroupRates(ctx, key.UserID); rateErr == nil {
+				if userRate, ok := userRates[key.Group.ID]; ok {
+					rate = userRate
+				}
+			}
+		}
+		monitor.RateMultiplier = &rate
+	}
 }
 
 // validateMonitorGroup 确认监控分组存在；nil 表示移入未分组。

@@ -27,6 +27,8 @@ export interface UserMonitorView {
   provider: Provider
   /** Legacy business aggregation label; not the admin monitor group. */
   group_name: string
+  /** Effective multiplier resolved from the monitor API key's group. */
+  rate_multiplier?: number | null
   /** Shared admin-configured monitor organization. */
   monitor_group_id: number | null
   monitor_group_name: string | null

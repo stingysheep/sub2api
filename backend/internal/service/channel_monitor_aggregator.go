@@ -64,6 +64,11 @@ func (s *ChannelMonitorService) ListUserView(ctx context.Context) ([]*UserMonito
 		return []*UserMonitorView{}, nil
 	}
 
+	for _, monitor := range monitors {
+		s.decryptInPlace(monitor)
+	}
+	s.resolveRateMultipliers(ctx, monitors)
+
 	ids, primaryByID, extrasByID := collectMonitorIndexes(monitors)
 	summaries := s.BatchMonitorStatusSummary(ctx, ids, primaryByID, extrasByID)
 	latestMap := s.batchLatest(ctx, ids)
@@ -137,6 +142,8 @@ func (s *ChannelMonitorService) GetUserDetail(ctx context.Context, id int64) (*U
 	if !m.Enabled {
 		return nil, ErrChannelMonitorNotFound
 	}
+	s.decryptInPlace(m)
+	s.resolveRateMultipliers(ctx, []*ChannelMonitor{m})
 
 	latest, err := s.repo.ListLatestPerModel(ctx, id)
 	if err != nil {
@@ -235,6 +242,7 @@ func buildUserViewFromSummary(
 		Name:                  m.Name,
 		Provider:              m.Provider,
 		GroupName:             m.GroupName,
+		RateMultiplier:        m.RateMultiplier,
 		MonitorGroupID:        m.MonitorGroupID,
 		MonitorGroupName:      m.MonitorGroupName,
 		MonitorGroupSortOrder: m.MonitorGroupSortOrder,

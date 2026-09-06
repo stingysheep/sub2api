@@ -41,6 +41,9 @@ type ChannelMonitor struct {
 	PrimaryModel          string
 	ExtraModels           []string
 	GroupName             string
+	// RateMultiplier is the effective multiplier of the Sub2API API key's group.
+	// It is resolved from the selected API key, never entered in the monitor form.
+	RateMultiplier        *float64
 	MonitorGroupID        *int64
 	MonitorGroupName      string
 	MonitorGroupSortOrder int
@@ -183,6 +186,8 @@ type UserMonitorView struct {
 	Name                  string
 	Provider              string
 	GroupName             string
+	// RateMultiplier is the effective multiplier of the monitor's API key group.
+	RateMultiplier        *float64
 	MonitorGroupID        *int64
 	MonitorGroupName      string
 	MonitorGroupSortOrder int

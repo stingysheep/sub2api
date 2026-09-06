@@ -56,6 +56,7 @@ type channelMonitorUserListItem struct {
 	Name                  string                               `json:"name"`
 	Provider              string                               `json:"provider"`
 	GroupName             string                               `json:"group_name"`
+	RateMultiplier        *float64                             `json:"rate_multiplier,omitempty"`
 	MonitorGroupID        *int64                               `json:"monitor_group_id"`
 	MonitorGroupName      string                               `json:"monitor_group_name"`
 	MonitorGroupSortOrder int                                  `json:"monitor_group_sort_order"`
@@ -122,6 +123,7 @@ func userMonitorViewToItem(v *service.UserMonitorView, includeQuota bool) channe
 		Name:                  v.Name,
 		Provider:              v.Provider,
 		GroupName:             v.GroupName,
+		RateMultiplier:        v.RateMultiplier,
 		MonitorGroupID:        v.MonitorGroupID,
 		MonitorGroupName:      v.MonitorGroupName,
 		MonitorGroupSortOrder: v.MonitorGroupSortOrder,

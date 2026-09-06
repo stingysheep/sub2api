@@ -1,5 +1,7 @@
 <template>
   <AppLayout>
+    <div class="flex min-w-0 flex-col gap-4 xl:flex-row">
+      <div class="min-w-0 flex-1">
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
@@ -443,6 +445,43 @@
         />
       </template>
     </TablePageLayout>
+      </div>
+
+      <aside class="w-full shrink-0 rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800 xl:w-[300px]" aria-label="渠道状态">
+        <div class="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-dark-700">
+          <div>
+            <h2 class="text-sm font-semibold text-gray-900 dark:text-white">渠道状态</h2>
+            <p class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{{ monitorItems.length }} 个监控 · 自动刷新</p>
+          </div>
+          <button type="button" class="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-700 dark:hover:text-gray-200" :disabled="monitorLoading" title="刷新渠道状态" aria-label="刷新渠道状态" @click="loadChannelMonitors">
+            <Icon name="refresh" size="sm" :class="monitorLoading ? 'animate-spin' : ''" />
+          </button>
+        </div>
+        <div class="max-h-[calc(100vh-10rem)] space-y-2 overflow-y-auto p-3">
+          <div v-if="monitorLoading && monitorItems.length === 0" class="space-y-2" aria-live="polite">
+            <div v-for="n in 5" :key="n" class="h-24 animate-pulse rounded-xl bg-gray-100 dark:bg-dark-700" />
+          </div>
+          <div v-else-if="monitorItems.length === 0" class="py-8 text-center text-xs text-gray-500 dark:text-gray-400">暂无可用渠道监控</div>
+          <div v-else v-for="monitor in monitorItems" :key="monitor.id" class="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-dark-700 dark:bg-dark-900/40">
+            <div class="flex items-start gap-2">
+              <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="monitorStatusDotClass(monitor.primary_status)" />
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                  {{ monitor.name }}<span v-if="monitor.rate_multiplier != null" class="ml-1 text-blue-600 dark:text-blue-400">（{{ formatMultiplier(monitor.rate_multiplier) }}x）</span>
+                </div>
+                <div class="mt-1 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                  <span>{{ monitorStatusLabel(monitor.primary_status) }}</span>
+                  <span>·</span>
+                  <span>{{ formatMonitorLatency(monitor.primary_latency_ms) }}</span>
+                  <span v-if="monitor.monitor_group_name" class="truncate">· {{ monitor.monitor_group_name }}</span>
+                </div>
+                <div class="mt-2 h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"><div class="h-full rounded-full" :class="monitorStatusBarClass(monitor.primary_status)" :style="{ width: `${Math.max(0, Math.min(100, monitor.availability_7d || 0))}%` }" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
 
     <!-- Create/Edit Modal -->
     <BaseDialog
@@ -1125,7 +1164,7 @@
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
-import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
+import { keysAPI, authAPI, usageAPI, userGroupsAPI, channelMonitorUserAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import DataTable from '@/components/common/DataTable.vue'
@@ -1143,6 +1182,8 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
+import type { UserMonitorView } from '@/api/channelMonitor'
+import { formatMultiplier } from '@/utils/formatters'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
@@ -1270,6 +1311,9 @@ const columns = computed<Column[]>(() =>
 )
 
 const apiKeys = ref<ApiKey[]>([])
+const monitorItems = ref<UserMonitorView[]>([])
+const monitorLoading = ref(false)
+let monitorAbortController: AbortController | null = null
 const groups = ref<Group[]>([])
 const loading = ref(false)
 const submitting = ref(false)
@@ -1449,6 +1493,46 @@ const isAbortError = (error: unknown) => {
   if (!error || typeof error !== 'object') return false
   const { name, code } = error as { name?: string; code?: string }
   return name === 'AbortError' || code === 'ERR_CANCELED'
+}
+
+function monitorStatusLabel(status: UserMonitorView['primary_status']): string {
+  if (status === 'operational') return '可用'
+  if (status === 'degraded') return '降级'
+  if (status === 'failed') return '失败'
+  if (status === 'error') return '错误'
+  return '未知'
+}
+function monitorStatusDotClass(status: UserMonitorView['primary_status']): string {
+  if (status === 'operational') return 'bg-emerald-500'
+  if (status === 'degraded') return 'bg-amber-500'
+  if (status === 'failed' || status === 'error') return 'bg-red-500'
+  return 'bg-gray-400'
+}
+function monitorStatusBarClass(status: UserMonitorView['primary_status']): string {
+  if (status === 'operational') return 'bg-emerald-500'
+  if (status === 'degraded') return 'bg-amber-500'
+  if (status === 'failed' || status === 'error') return 'bg-red-500'
+  return 'bg-gray-400'
+}
+function formatMonitorLatency(value: number | null): string {
+  return value == null ? '—' : `${value}ms`
+}
+async function loadChannelMonitors() {
+  monitorAbortController?.abort()
+  const controller = new AbortController()
+  monitorAbortController = controller
+  monitorLoading.value = true
+  try {
+    const response = await channelMonitorUserAPI.list({ signal: controller.signal })
+    if (!controller.signal.aborted) monitorItems.value = response.items || []
+  } catch (error) {
+    if (!isAbortError(error)) console.error('Failed to load channel monitor status:', error)
+  } finally {
+    if (monitorAbortController === controller) {
+      monitorLoading.value = false
+      monitorAbortController = null
+    }
+  }
 }
 
 const loadApiKeys = async () => {
@@ -1956,6 +2040,7 @@ function formatResetTime(resetAt: string | null): string {
 onMounted(() => {
   loadSavedColumns()
   loadApiKeys()
+  loadChannelMonitors()
   loadGroups()
   loadUserGroupRates()
   loadPublicSettings()
@@ -1965,6 +2050,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', closeGroupSelector)
+  monitorAbortController?.abort()
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>

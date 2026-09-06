@@ -15,6 +15,7 @@
       <div class="flex-1 min-w-0">
         <div class="text-base font-semibold truncate text-gray-900 dark:text-gray-100">
           {{ item.name }}
+          <span v-if="item.rate_multiplier != null" class="ml-1 text-blue-600 dark:text-blue-400">（{{ formatMultiplier(item.rate_multiplier) }}x）</span>
         </div>
         <div class="mt-0.5 flex items-center gap-1.5 min-w-0">
           <span
@@ -85,6 +86,7 @@ import {
   providerGradient,
 } from '@/composables/useChannelMonitorFormat'
 import { isChannelMonitorQuotaVisible } from '@/utils/featureFlags'
+import { formatMultiplier } from '@/utils/formatters'
 import ProviderIcon from './ProviderIcon.vue'
 import MonitorMetricPair from './MonitorMetricPair.vue'
 import MonitorAvailabilityRow from './MonitorAvailabilityRow.vue'
