@@ -606,12 +606,12 @@ SELECT days.day::date::text AS day,
        COUNT(u.id) FILTER (WHERE ua.inviter_id IS NOT NULL)::bigint AS invited_count,
        COUNT(u.id)::bigint AS total_count
 FROM generate_series(
-       ($1 AT TIME ZONE $3)::date,
-       (($2 - interval '1 microsecond') AT TIME ZONE $3)::date,
+       ($1::timestamptz AT TIME ZONE $3::text)::date,
+       (($2::timestamptz - interval '1 microsecond') AT TIME ZONE $3::text)::date,
        interval '1 day'
      ) AS days(day)
 LEFT JOIN users u
-       ON (u.created_at AT TIME ZONE $3)::date = days.day::date
+       ON (u.created_at AT TIME ZONE $3::text)::date = days.day::date
       AND u.role = 'user'
       AND u.deleted_at IS NULL
       AND u.created_at >= $1
