@@ -280,6 +280,26 @@ export async function getUserSpendingRanking(
   return data
 }
 
+export interface UserRankingParams {
+  start_date?: string
+  end_date?: string
+  timezone?: string
+  limit?: number
+}
+
+export interface UserRankingResponse {
+  users: UserBreakdownItem[]
+  start_date: string
+  end_date: string
+  timezone: string
+}
+
+/** Get the anonymized token ranking exposed to regular users. */
+export async function getUserRanking(params?: UserRankingParams): Promise<UserRankingResponse> {
+  const { data } = await apiClient.get<UserRankingResponse>('/user/ranking', { params })
+  return data
+}
+
 export interface PlatformUsage {
   platform: string
   today_actual_cost: number
@@ -346,6 +366,7 @@ export const dashboardAPI = {
   getApiKeyUsageTrend,
   getUserUsageTrend,
   getUserSpendingRanking,
+  getUserRanking,
   getBatchUsersUsage,
   getBatchApiKeysUsage
 }

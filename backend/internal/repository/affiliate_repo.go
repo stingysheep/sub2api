@@ -481,6 +481,14 @@ func (r *affiliateRepository) GetAdminAnalytics(ctx context.Context, filter serv
 	if tz == "" {
 		tz = "UTC"
 	}
+	loc, locErr := time.LoadLocation(tz)
+	if locErr != nil {
+		loc = time.UTC
+		tz = "UTC"
+	}
+	nowLocal := time.Now().In(loc)
+	todayStart := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, loc)
+	tomorrowStart := todayStart.AddDate(0, 0, 1)
 	period := endAt.Sub(startAt)
 	// Treat both ranges as half-open intervals so the boundary timestamp is
 	// counted exactly once. The existing date filter passes an inclusive end
@@ -501,12 +509,13 @@ func (r *affiliateRepository) GetAdminAnalytics(ctx context.Context, filter serv
 	inviteRows, err := r.client.QueryContext(ctx, `
 SELECT ROW_NUMBER() OVER (ORDER BY current_count DESC, total_count DESC, inviter_id),
        inviter_id, COALESCE(inviter.email, ''), COALESCE(inviter.username, ''),
-       current_count, previous_count, total_count, last_activity_at
+       current_count, previous_count, total_count, today_count, last_activity_at
 FROM (
     SELECT ua.inviter_id,
            COUNT(*) FILTER (WHERE ua.created_at >= $1 AND ua.created_at < $2)::bigint AS current_count,
            COUNT(*) FILTER (WHERE ua.created_at >= $3 AND ua.created_at < $4)::bigint AS previous_count,
-           COUNT(*)::bigint AS total_count,
+           COUNT(*) FILTER (WHERE ua.created_at < $5)::bigint AS total_count,
+           COUNT(*) FILTER (WHERE ua.created_at >= $5 AND ua.created_at < $6)::bigint AS today_count,
            MAX(ua.created_at) FILTER (WHERE ua.created_at >= $1 AND ua.created_at < $2) AS last_activity_at
     FROM user_affiliates ua
     JOIN users invitee ON invitee.id = ua.user_id
@@ -518,14 +527,14 @@ FROM (
 JOIN users inviter ON inviter.id = ranked.inviter_id AND inviter.deleted_at IS NULL
 WHERE current_count > 0
 ORDER BY current_count DESC, total_count DESC, inviter_id
-LIMIT $5`, startAt, endExclusive, previousStartAt, previousEndExclusive, limit)
+LIMIT $7`, startAt, endExclusive, previousStartAt, previousEndExclusive, todayStart, tomorrowStart, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query affiliate inviter analytics: %w", err)
 	}
 	for inviteRows.Next() {
 		var item service.AffiliateAdminRanking
 		var lastActivity sql.NullTime
-		if err := inviteRows.Scan(&item.Rank, &item.InviterID, &item.InviterEmail, &item.InviterUsername, &item.CurrentCount, &item.PreviousCount, &item.TotalCount, &lastActivity); err != nil {
+		if err := inviteRows.Scan(&item.Rank, &item.InviterID, &item.InviterEmail, &item.InviterUsername, &item.CurrentCount, &item.PreviousCount, &item.TotalCount, &item.TodayCount, &lastActivity); err != nil {
 			_ = inviteRows.Close()
 			return nil, fmt.Errorf("scan affiliate inviter analytics: %w", err)
 		}
@@ -592,18 +601,24 @@ LIMIT $5`, startAt, endExclusive, previousStartAt, previousEndExclusive, limit)
 	_ = rebateRows.Close()
 
 	growthRows, err := r.client.QueryContext(ctx, `
-SELECT (u.created_at AT TIME ZONE $3)::date::text AS day,
-       COUNT(*) FILTER (WHERE ua.inviter_id IS NULL)::bigint AS natural_count,
-       COUNT(*) FILTER (WHERE ua.inviter_id IS NOT NULL)::bigint AS invited_count,
-       COUNT(*)::bigint AS total_count
-FROM users u
+SELECT days.day::date::text AS day,
+       COUNT(u.id) FILTER (WHERE ua.inviter_id IS NULL)::bigint AS natural_count,
+       COUNT(u.id) FILTER (WHERE ua.inviter_id IS NOT NULL)::bigint AS invited_count,
+       COUNT(u.id)::bigint AS total_count
+FROM generate_series(
+       ($1 AT TIME ZONE $3)::date,
+       (($2 - interval '1 microsecond') AT TIME ZONE $3)::date,
+       interval '1 day'
+     ) AS days(day)
+LEFT JOIN users u
+       ON (u.created_at AT TIME ZONE $3)::date = days.day::date
+      AND u.role = 'user'
+      AND u.deleted_at IS NULL
+      AND u.created_at >= $1
+      AND u.created_at < $2
 LEFT JOIN user_affiliates ua ON ua.user_id = u.id
-WHERE u.role = 'user'
-  AND u.deleted_at IS NULL
-  AND u.created_at >= $1
-  AND u.created_at < $2
-GROUP BY day
-ORDER BY day`, startAt, endExclusive, tz)
+GROUP BY days.day
+ORDER BY days.day`, startAt, endExclusive, tz)
 	if err != nil {
 		return nil, fmt.Errorf("query affiliate registration growth: %w", err)
 	}

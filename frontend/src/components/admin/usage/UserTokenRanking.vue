@@ -8,7 +8,7 @@
         <span v-if="!loading && items.length > 0" class="text-xs text-gray-400 dark:text-gray-500">
           {{ t('admin.usage.tokenRanking.userCount', { count: items.length }) }}
         </span>
-        <div class="w-28">
+        <div v-if="scope === 'admin'" class="w-28">
           <Select v-model="limit" :options="limitOptions" @change="load" />
         </div>
       </div>
@@ -50,9 +50,9 @@
             v-for="(item, index) in items"
             v-else
             :key="item.user_id"
-            class="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40"
+            class="transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40" :class="scope === 'admin' ? 'cursor-pointer' : ''"
             :title="t('admin.usage.tokenRanking.rowHint')"
-            @click="$emit('select-user', item.user_id, item.email)"
+            @click="scope === 'admin' && emit('select-user', item.user_id, item.email)"
           >
             <td class="px-4 py-3 sm:px-6">
               <span
@@ -64,14 +64,14 @@
             </td>
             <td class="max-w-[260px] truncate px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200" :title="item.email">
               {{ item.email || `User #${item.user_id}` }}
-              <span class="ml-1 font-normal text-gray-400 dark:text-gray-500">#{{ item.user_id }}</span>
+              <span v-if="showUserId" class="ml-1 font-normal text-gray-400 dark:text-gray-500">#{{ item.user_id }}</span>
             </td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ item.requests.toLocaleString() }}</td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ fmtTokens(item.input_tokens) }}</td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ fmtTokens(item.output_tokens) }}</td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ fmtTokens(item.cache_tokens) }}</td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums text-gray-900 dark:text-gray-100">{{ fmtTokens(item.total_tokens) }}</td>
-            <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums text-green-600 dark:text-green-400">${{ fmtCost(item.actual_cost) }}</td>
+            <td v-if="showCost" class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums text-green-600 dark:text-green-400">${{ fmtCost(item.actual_cost) }}</td>
           </tr>
         </tbody>
       </table>
@@ -80,27 +80,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getUserBreakdown, type UserBreakdownParams } from '@/api/admin/dashboard'
+import { getUserBreakdown, getUserRanking, type UserBreakdownParams } from '@/api/admin/dashboard'
 import { formatCompactNumber, formatCostFixed } from '@/utils/format'
 import type { UserBreakdownItem } from '@/types'
 import Select from '@/components/common/Select.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   startDate: string
   endDate: string
-  filters: Record<string, unknown>
+  filters?: Record<string, unknown>
   model?: string
-}>()
+  scope?: 'admin' | 'user'
+}>(), { scope: 'admin', filters: () => ({}) })
 
-defineEmits<{ (e: 'select-user', userId: number, email: string): void }>()
+const emit = defineEmits<{ (e: 'select-user', userId: number, email: string): void; (e: 'loading', value: boolean): void }>()
 
 const { t } = useI18n()
 
 type SortKey = NonNullable<UserBreakdownParams['sort_by']>
-const sortableColumns: { key: SortKey; label: string }[] = [
+const allSortableColumns: { key: SortKey; label: string }[] = [
   { key: 'requests', label: 'admin.usage.tokenRanking.columns.requests' },
   { key: 'input_tokens', label: 'admin.usage.tokenRanking.columns.inputTokens' },
   { key: 'output_tokens', label: 'admin.usage.tokenRanking.columns.outputTokens' },
@@ -108,6 +109,10 @@ const sortableColumns: { key: SortKey; label: string }[] = [
   { key: 'total_tokens', label: 'admin.usage.tokenRanking.columns.totalTokens' },
   { key: 'actual_cost', label: 'admin.usage.tokenRanking.columns.cost' },
 ]
+
+const sortableColumns = computed(() => props.scope === 'user' ? allSortableColumns.filter((column) => column.key !== 'actual_cost') : allSortableColumns)
+const showCost = computed(() => props.scope === 'admin')
+const showUserId = computed(() => props.scope === 'admin')
 
 const limitOptions = [
   { value: 20, label: 'Top 20' },
@@ -126,11 +131,12 @@ const RANK_BADGE_CLASSES = [
 const items = ref<UserBreakdownItem[]>([])
 const loading = ref(false)
 const sortBy = ref<SortKey>('total_tokens')
-const limit = ref(50)
+const limit = ref(props.scope === 'user' ? 20 : 50)
 let reqSeq = 0
 
 const fmtTokens = (v: number) => formatCompactNumber(v)
 const fmtCost = (v: number) => formatCostFixed(v, 4)
+const timezone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'UTC' } }
 
 const setSort = (key: SortKey) => {
   if (sortBy.value === key) return
@@ -141,29 +147,39 @@ const setSort = (key: SortKey) => {
 const load = async () => {
   const seq = ++reqSeq
   loading.value = true
+  emit('loading', true)
   try {
-    const params: UserBreakdownParams = {
-      ...props.filters,
-      start_date: props.startDate,
-      end_date: props.endDate,
-      sort_by: sortBy.value,
-      limit: limit.value,
+    if (props.scope === 'user') {
+      const res = await getUserRanking({ start_date: props.startDate, end_date: props.endDate, timezone: timezone(), limit: limit.value })
+      if (seq !== reqSeq) return
+      items.value = res.users || []
+    } else {
+      const params: UserBreakdownParams = {
+        ...props.filters,
+        start_date: props.startDate,
+        end_date: props.endDate,
+        sort_by: sortBy.value,
+        limit: limit.value,
+      }
+      if (props.model) params.model = props.model
+      const res = await getUserBreakdown(params)
+      if (seq !== reqSeq) return
+      items.value = res.users || []
     }
-    if (props.model) params.model = props.model
-    const res = await getUserBreakdown(params)
-    if (seq !== reqSeq) return
-    items.value = res.users || []
   } catch {
     if (seq !== reqSeq) return
     items.value = []
   } finally {
-    if (seq === reqSeq) loading.value = false
+    if (seq === reqSeq) {
+      loading.value = false
+      emit('loading', false)
+    }
   }
 }
 
 // Reload when the shared filters / date range / model change.
 watch(
-  () => [props.startDate, props.endDate, props.model, JSON.stringify(props.filters)],
+  () => [props.startDate, props.endDate, props.model, props.scope, JSON.stringify(props.filters)],
   () => load(),
   { immediate: true }
 )

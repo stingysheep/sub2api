@@ -46,10 +46,11 @@ type userGroupStat struct {
 
 // UsageHandler handles usage-related requests
 type UsageHandler struct {
-	usageService   *service.UsageService
-	apiKeyService  *service.APIKeyService
-	opsService     *service.OpsService
-	settingService *service.SettingService
+	usageService     *service.UsageService
+	apiKeyService    *service.APIKeyService
+	opsService       *service.OpsService
+	settingService   *service.SettingService
+	dashboardService *service.DashboardService
 }
 
 // NewUsageHandler creates a new UsageHandler
@@ -65,6 +66,106 @@ func NewUsageHandler(
 		opsService:     opsService,
 		settingService: settingService,
 	}
+}
+
+// SetDashboardService wires the shared dashboard aggregation service after the
+// handler is constructed. Keeping this as a setter preserves lightweight unit
+// test construction while allowing the user ranking endpoint to reuse the
+// administrator's aggregation query.
+func (h *UsageHandler) SetDashboardService(dashboardService *service.DashboardService) {
+	h.dashboardService = dashboardService
+}
+
+// UserRanking returns the anonymized user token ranking for the current user
+// interface. It intentionally returns token/request metrics only; monetary
+// fields are not exposed to regular users.
+// GET /api/v1/user/ranking
+func (h *UsageHandler) UserRanking(c *gin.Context) {
+	if h.dashboardService == nil {
+		response.InternalError(c, "Dashboard service not available")
+		return
+	}
+
+	tzName := strings.TrimSpace(c.Query("timezone"))
+	if tzName == "" {
+		tzName = "UTC"
+	}
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		loc = time.UTC
+		tzName = "UTC"
+	}
+
+	now := time.Now().In(loc)
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	period := strings.ToLower(strings.TrimSpace(c.Query("period")))
+	if period == "week" {
+		// Calendar week starts on Monday, matching the admin dashboard's
+		// date-range convention.
+		daysSinceMonday := (int(start.Weekday()) + 6) % 7
+		start = start.AddDate(0, 0, -daysSinceMonday)
+	}
+
+	if rawStart := strings.TrimSpace(c.Query("start_date")); rawStart != "" {
+		parsed, parseErr := time.ParseInLocation("2006-01-02", rawStart, loc)
+		if parseErr != nil {
+			response.BadRequest(c, "Invalid start_date")
+			return
+		}
+		start = parsed
+	}
+	end := start.AddDate(0, 0, 1)
+	if period == "week" && strings.TrimSpace(c.Query("end_date")) == "" {
+		end = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
+	}
+	if rawEnd := strings.TrimSpace(c.Query("end_date")); rawEnd != "" {
+		parsed, parseErr := time.ParseInLocation("2006-01-02", rawEnd, loc)
+		if parseErr != nil {
+			response.BadRequest(c, "Invalid end_date")
+			return
+		}
+		end = parsed.AddDate(0, 0, 1)
+	}
+	if !end.After(start) {
+		response.BadRequest(c, "Invalid ranking date range")
+		return
+	}
+
+	limit := 20
+	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
+		if parsed, parseErr := strconv.Atoi(rawLimit); parseErr == nil && parsed > 0 && parsed <= 50 {
+			limit = parsed
+		}
+	}
+	stats, err := h.dashboardService.GetUserBreakdownStats(c.Request.Context(), start, end, usagestats.UserBreakdownDimension{UserRole: "user", SortBy: "total_tokens"}, limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get user ranking")
+		return
+	}
+	for i := range stats {
+		stats[i].Email = maskUserRankingEmail(stats[i].Email)
+		stats[i].Cost = 0
+		stats[i].ActualCost = 0
+		stats[i].AccountCost = 0
+	}
+	response.Success(c, gin.H{
+		"users":      stats,
+		"start_date": start.Format("2006-01-02"),
+		"end_date":   end.AddDate(0, 0, -1).Format("2006-01-02"),
+		"timezone":   tzName,
+	})
+}
+
+func maskUserRankingEmail(email string) string {
+	parts := strings.SplitN(strings.TrimSpace(email), "@", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return email
+	}
+	local := parts[0]
+	if len(local) <= 2 {
+		return local[:1] + "***@" + parts[1]
+	}
+	return local[:2] + "***@" + parts[1]
 }
 
 func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) (*userUsageFilters, bool) {

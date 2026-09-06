@@ -223,6 +223,7 @@ type AffiliateAdminRanking struct {
 	CurrentCount    int64      `json:"current_count"`
 	PreviousCount   int64      `json:"previous_count"`
 	TotalCount      int64      `json:"total_count"`
+	TodayCount      int64      `json:"today_count"`
 	CurrentAmount   float64    `json:"current_amount"`
 	PreviousAmount  float64    `json:"previous_amount"`
 	TotalAmount     float64    `json:"total_amount"`

@@ -155,11 +155,21 @@ export default {
     }
   },
 
+  userRanking: {
+    title: 'User Ranking',
+    subtitle: 'Top 20 users by total tokens; email addresses are masked',
+    periodLabel: 'Ranking period',
+    day: 'Daily',
+    week: 'Weekly',
+    to: 'to'
+  },
+
   // Navigation
   nav: {
     dashboard: 'Dashboard',
     announcements: 'Announcements',
     apiKeys: 'API Keys',
+    userRanking: 'User Ranking',
     batchImage: 'Batch Images',
     usage: 'Usage',
     redeem: 'Redeem',

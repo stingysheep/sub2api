@@ -88,6 +88,7 @@ export interface AffiliateAdminRanking {
   current_count: number
   previous_count: number
   total_count: number
+  today_count: number
   current_amount: number
   previous_amount: number
   total_amount: number

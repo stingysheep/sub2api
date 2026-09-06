@@ -12,13 +12,14 @@
     <div v-if="loading" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</div>
     <div v-else class="p-4">
       <div class="overflow-x-auto">
-        <table class="w-full min-w-[760px] text-sm">
+        <table class="w-full min-w-[860px] text-sm">
           <thead><tr class="border-b border-gray-100 text-left text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
             <th class="px-3 py-2">{{ t('admin.affiliates.analytics.rank') }}</th>
             <th class="px-3 py-2">{{ t('admin.affiliates.analytics.inviter') }}</th>
             <th class="px-3 py-2 text-right">{{ type === 'invites' ? t('admin.affiliates.analytics.periodInvites') : t('admin.affiliates.analytics.periodRebateRows') }}</th>
             <th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.change') }}</th>
             <th class="px-3 py-2 text-right">{{ type === 'invites' ? t('admin.affiliates.analytics.totalInvites') : t('admin.affiliates.analytics.periodRebateAmount') }}</th>
+            <th v-if="type === 'invites'" class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.todayInvites') }}</th>
             <th class="px-3 py-2 text-right">{{ type === 'invites' ? t('admin.affiliates.analytics.lastInvite') : t('admin.affiliates.analytics.totalRebate') }}</th>
           </tr></thead>
           <tbody v-if="ranking.length">
@@ -28,19 +29,26 @@
               <td class="px-3 py-3 text-right font-medium">{{ row.current_count }}</td>
               <td class="px-3 py-3 text-right" :class="delta(row) > 0 ? 'text-emerald-600' : delta(row) < 0 ? 'text-red-600' : 'text-gray-500'">{{ formatDelta(delta(row)) }}</td>
               <td class="px-3 py-3 text-right">{{ type === 'invites' ? row.total_count : money(row.current_amount) }}</td>
+              <td v-if="type === 'invites'" class="px-3 py-3 text-right font-semibold text-blue-600 dark:text-blue-400">{{ row.today_count }}</td>
               <td class="px-3 py-3 text-right">{{ type === 'invites' ? formatDate(row.last_activity_at) : money(row.total_amount) }}</td>
             </tr>
           </tbody>
-          <tbody v-else><tr><td colspan="6" class="px-3 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.affiliates.analytics.empty') }}</td></tr></tbody>
+          <tbody v-else><tr><td :colspan="type === 'invites' ? 7 : 6" class="px-3 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.affiliates.analytics.empty') }}</td></tr></tbody>
         </table>
       </div>
 
-      <div v-if="type === 'invites'" class="mt-6 overflow-x-auto">
-        <div class="mb-2 flex items-baseline justify-between gap-3"><h3 class="font-medium text-gray-900 dark:text-white">{{ t('admin.affiliates.analytics.growthTitle') }}</h3><span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.affiliates.analytics.growthHint') }}</span></div>
-        <table class="w-full min-w-[620px] text-sm">
-          <thead><tr class="border-b border-gray-100 text-left text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400"><th class="px-3 py-2">{{ t('admin.affiliates.analytics.date') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.naturalGrowth') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.invitedGrowth') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.totalGrowth') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.invitedShare') }}</th></tr></thead>
-          <tbody><tr v-for="row in analytics.registration_growth" :key="row.date" class="border-b border-gray-50 dark:border-dark-800"><td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ row.date }}</td><td class="px-3 py-2 text-right">{{ row.natural_count }}</td><td class="px-3 py-2 text-right font-medium text-blue-600 dark:text-blue-400">{{ row.invited_count }}</td><td class="px-3 py-2 text-right font-semibold">{{ row.total_count }}</td><td class="px-3 py-2 text-right text-gray-500">{{ formatShare(row.invited_share) }}</td></tr><tr v-if="!analytics.registration_growth.length"><td colspan="5" class="px-3 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.affiliates.analytics.empty') }}</td></tr></tbody>
-        </table>
+      <div v-if="type === 'invites'" class="mt-6">
+        <div class="mb-2 flex flex-wrap items-baseline justify-between gap-3"><h3 class="font-medium text-gray-900 dark:text-white">{{ t('admin.affiliates.analytics.growthTitle') }}</h3><span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.affiliates.analytics.growthHint') }}</span></div>
+        <div v-if="analytics.registration_growth.length" class="h-72 rounded-lg border border-gray-100 bg-gray-50/50 p-3 dark:border-dark-700 dark:bg-dark-800/40">
+          <Line :data="growthChartData" :options="growthChartOptions" aria-label="Daily user growth chart" role="img" />
+        </div>
+        <div v-else class="rounded-lg border border-gray-100 px-3 py-8 text-center text-sm text-gray-500 dark:border-dark-700">{{ t('admin.affiliates.analytics.empty') }}</div>
+        <div class="mt-4 overflow-x-auto">
+          <table class="w-full min-w-[620px] text-sm">
+            <thead><tr class="border-b border-gray-100 text-left text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400"><th class="px-3 py-2">{{ t('admin.affiliates.analytics.date') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.naturalGrowth') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.invitedGrowth') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.totalGrowth') }}</th><th class="px-3 py-2 text-right">{{ t('admin.affiliates.analytics.invitedShare') }}</th></tr></thead>
+            <tbody><tr v-for="row in analytics.registration_growth" :key="row.date" class="border-b border-gray-50 dark:border-dark-800"><td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ row.date }}</td><td class="px-3 py-2 text-right">{{ row.natural_count }}</td><td class="px-3 py-2 text-right font-medium text-blue-600 dark:text-blue-400">{{ row.invited_count }}</td><td class="px-3 py-2 text-right font-semibold">{{ row.total_count }}</td><td class="px-3 py-2 text-right text-gray-500">{{ formatShare(row.invited_share) }}</td></tr><tr v-if="!analytics.registration_growth.length"><td colspan="5" class="px-3 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.affiliates.analytics.empty') }}</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </section>
@@ -48,10 +56,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Chart as ChartJS, CategoryScale, Filler, Legend, LineElement, LinearScale, PointElement, Tooltip } from 'chart.js'
+import { Line } from 'vue-chartjs'
 import Icon from '@/components/icons/Icon.vue'
 import { affiliatesAPI, type AffiliateAdminAnalytics, type AffiliateAdminRanking } from '@/api/admin/affiliates'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { useAppStore } from '@/stores/app'
+
+ChartJS.register(CategoryScale, Filler, Legend, LineElement, LinearScale, PointElement, Tooltip)
 
 type AnalyticsType = 'invites' | 'rebates'
 const props = defineProps<{ type: AnalyticsType; startAt?: string; endAt?: string }>()
@@ -60,6 +72,21 @@ const appStore = useAppStore()
 const loading = ref(false)
 const analytics = ref<AffiliateAdminAnalytics>({ start_at: '', end_at: '', previous_start_at: '', previous_end_at: '', top_inviters: [], top_rebate_earners: [], registration_growth: [] })
 const ranking = computed(() => props.type === 'invites' ? analytics.value.top_inviters : analytics.value.top_rebate_earners)
+const growthChartData = computed(() => ({
+  labels: analytics.value.registration_growth.map((row) => row.date),
+  datasets: [
+    { label: t('admin.affiliates.analytics.naturalGrowth'), data: analytics.value.registration_growth.map((row) => row.natural_count), borderColor: '#94a3b8', backgroundColor: 'rgba(148, 163, 184, 0.08)', tension: 0.3, pointRadius: 2, pointHoverRadius: 5, fill: true },
+    { label: t('admin.affiliates.analytics.invitedGrowth'), data: analytics.value.registration_growth.map((row) => row.invited_count), borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, 0.08)', tension: 0.3, pointRadius: 2, pointHoverRadius: 5, fill: true },
+    { label: t('admin.affiliates.analytics.totalGrowth'), data: analytics.value.registration_growth.map((row) => row.total_count), borderColor: '#0f766e', backgroundColor: 'transparent', borderDash: [5, 4], tension: 0.3, pointRadius: 2, pointHoverRadius: 5, fill: false },
+  ],
+}))
+const growthChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  interaction: { mode: 'index' as const, intersect: false },
+  plugins: { legend: { position: 'bottom' as const, labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { enabled: true } },
+  scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12, maxRotation: 0 } }, y: { beginAtZero: true, ticks: { precision: 0 } } },
+}))
 function timezone() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'UTC' } }
 function delta(row: AffiliateAdminRanking) { return row.current_count - row.previous_count }
 function formatDelta(value: number) { return value > 0 ? `+${value}` : String(value) }

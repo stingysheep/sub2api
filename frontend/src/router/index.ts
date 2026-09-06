@@ -216,6 +216,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/user-ranking',
+    name: 'UserRanking',
+    component: () => import('@/views/user/UserRankingView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'User Ranking',
+      titleKey: 'userRanking.title',
+      descriptionKey: 'userRanking.subtitle'
+    }
+  },
+  {
     path: '/batch-image',
     name: 'BatchImageGuide',
     alias: '/docs/batch-image',

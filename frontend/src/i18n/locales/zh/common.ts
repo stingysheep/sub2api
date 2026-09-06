@@ -155,11 +155,21 @@ export default {
     }
   },
 
+  userRanking: {
+    title: '用户排行',
+    subtitle: '按总 Token 统计前 20 名，用户邮箱已脱敏',
+    periodLabel: '排行周期',
+    day: '日榜',
+    week: '周榜',
+    to: '至'
+  },
+
   // Navigation
   nav: {
     dashboard: '仪表盘',
     announcements: '公告',
     apiKeys: 'API 密钥',
+    userRanking: '用户排行',
     batchImage: '批量生图',
     usage: '使用记录',
     redeem: '兑换',

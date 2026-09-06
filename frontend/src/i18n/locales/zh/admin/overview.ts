@@ -409,7 +409,7 @@ export default {
         inviteTitle: '邀请增长贡献前十',
         rebateTitle: '返利贡献前十',
         periodHint: '按当前筛选区间统计，并与上一同长度区间比较',
-        rank: '排名', inviter: '邀请人', periodInvites: '区间邀请数', periodRebateRows: '区间返利笔数', change: '较上期', totalInvites: '累计邀请数', periodRebateAmount: '区间返利额', lastInvite: '最近邀请', totalRebate: '累计返利额', empty: '暂无可用数据',
+        rank: '排名', inviter: '邀请人', periodInvites: '区间邀请数', periodRebateRows: '区间返利笔数', change: '较上期', totalInvites: '邀请总数（不含今日）', todayInvites: '今日新邀', periodRebateAmount: '区间返利额', lastInvite: '最近邀请', totalRebate: '累计返利额', empty: '暂无可用数据',
         growthTitle: '用户增长构成', growthHint: '按注册日期区分自然增长与邀请增长', date: '日期', naturalGrowth: '自然增长', invitedGrowth: '邀请增长', totalGrowth: '新增用户', invitedShare: '邀请占比'
       },
       records: {
