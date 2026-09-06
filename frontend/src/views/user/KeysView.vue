@@ -462,22 +462,40 @@
             <div v-for="n in 5" :key="n" class="h-24 animate-pulse rounded-xl bg-gray-100 dark:bg-dark-700" />
           </div>
           <div v-else-if="monitorItems.length === 0" class="py-8 text-center text-xs text-gray-500 dark:text-gray-400">暂无可用渠道监控</div>
-          <div v-else v-for="monitor in sortedMonitorItems" :key="monitor.id" class="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-dark-700 dark:bg-dark-900/40">
-            <div class="flex items-start gap-2">
-              <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="monitorStatusDotClass(monitor.primary_status)" />
+          <div v-else class="space-y-3">
+            <section v-for="section in monitorSections" :key="section.key" class="space-y-1.5">
+              <div class="flex items-center justify-between px-1 text-[10px] font-semibold text-gray-500 dark:text-gray-400">
+                <span class="min-w-0 truncate">{{ section.name }}</span>
+                <span class="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 tabular-nums dark:bg-dark-700">{{ section.items.length }}</span>
+              </div>
+              <div class="space-y-1.5">
+              <div v-for="monitor in section.items" :key="monitor.id" class="rounded-xl border border-emerald-200/80 bg-emerald-50/20 p-2.5 dark:border-emerald-900/60 dark:bg-emerald-950/10">
+            <div class="flex min-w-0 items-center gap-2">
+              <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-100/80 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
+                <ProviderIcon :provider="monitor.provider" :size="16" />
+              </span>
               <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-semibold text-gray-900 dark:text-white">
-                  {{ monitor.name }}<span v-if="monitor.rate_multiplier != null" class="ml-1 text-blue-600 dark:text-blue-400">（{{ formatMultiplier(monitor.rate_multiplier) }}x）</span>
+                <div class="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold leading-5 text-gray-900 dark:text-white">
+                  <span class="min-w-0 flex-1 truncate">{{ monitor.name }}</span>
+                  <span v-if="monitor.rate_multiplier != null" class="shrink-0 whitespace-nowrap text-blue-600 dark:text-blue-400">（{{ formatMultiplier(monitor.rate_multiplier) }}x）</span>
                 </div>
-                <div class="mt-1 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-                  <span>{{ monitorStatusLabel(monitor.primary_status) }}</span>
-                  <span>·</span>
-                  <span>{{ formatMonitorLatency(monitor.primary_latency_ms) }}</span>
-                  <span v-if="monitor.monitor_group_name" class="truncate">· {{ monitor.monitor_group_name }}</span>
+                <div class="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+                  <span class="shrink-0">{{ formatMonitorLatency(monitor.primary_latency_ms) }}ms</span>
+                  <span v-if="monitor.monitor_group_name" class="min-w-0 truncate">· {{ monitor.monitor_group_name }}</span>
                 </div>
-                <MonitorTimeline :buckets="monitor.timeline" :countdown-seconds="0" :length="60" compact />
+              </div>
+              <div class="flex shrink-0 flex-col items-end gap-0.5 text-[10px] font-semibold" :class="monitorStatusTextClass(monitor.primary_status)">
+                <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full" :class="monitorStatusDotClass(monitor.primary_status)" />{{ monitorStatusLabel(monitor.primary_status) }}</span>
               </div>
             </div>
+            <div class="mt-1.5 flex items-center justify-between text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+              <span>7日可用率 {{ formatMonitorAvailability(monitor.availability_7d) }}</span>
+              <span v-if="monitor.primary_latency_ms != null">TTFT {{ formatMonitorLatency(monitor.primary_latency_ms) }}ms</span>
+            </div>
+            <MonitorTimeline :buckets="monitor.timeline" :countdown-seconds="0" :length="60" compact />
+          </div>
+              </div>
+            </section>
           </div>
         </div>
       </aside>
@@ -1185,6 +1203,7 @@ import type { BatchApiKeyUsageStats } from '@/api/usage'
 import type { UserMonitorView } from '@/api/channelMonitor'
 import { formatMultiplier } from '@/utils/formatters'
 import MonitorTimeline from '@/components/user/monitor/MonitorTimeline.vue'
+import ProviderIcon from '@/components/user/monitor/ProviderIcon.vue'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
@@ -1320,6 +1339,26 @@ const sortedMonitorItems = computed(() => [...monitorItems.value].sort((a, b) =>
   (a.monitor_sort_order ?? 0) - (b.monitor_sort_order ?? 0) ||
   a.id - b.id,
 ))
+
+type MonitorSection = {
+  key: string
+  name: string
+  items: UserMonitorView[]
+}
+const monitorSections = computed<MonitorSection[]>(() => {
+  const sections = new Map<string, MonitorSection>()
+  for (const monitor of sortedMonitorItems.value) {
+    const key = monitor.monitor_group_id == null ? 'ungrouped' : String(monitor.monitor_group_id)
+    const name = monitor.monitor_group_name || '未分组'
+    const section = sections.get(key)
+    if (section) {
+      section.items.push(monitor)
+    } else {
+      sections.set(key, { key, name, items: [monitor] })
+    }
+  }
+  return [...sections.values()]
+})
 const monitorLoading = ref(false)
 let monitorAbortController: AbortController | null = null
 const groups = ref<Group[]>([])
@@ -1515,6 +1554,15 @@ function monitorStatusDotClass(status: UserMonitorView['primary_status']): strin
   if (status === 'degraded') return 'bg-amber-500'
   if (status === 'failed' || status === 'error') return 'bg-red-500'
   return 'bg-gray-400'
+}
+function monitorStatusTextClass(status: UserMonitorView['primary_status']): string {
+  if (status === 'operational') return 'text-emerald-600 dark:text-emerald-400'
+  if (status === 'degraded') return 'text-amber-600 dark:text-amber-400'
+  if (status === 'failed' || status === 'error') return 'text-red-600 dark:text-red-400'
+  return 'text-gray-500 dark:text-gray-400'
+}
+function formatMonitorAvailability(value: number | null | undefined): string {
+  return value == null || Number.isNaN(value) ? '—' : `${value.toFixed(1)}%`
 }
 function formatMonitorLatency(value: number | null): string {
   return value == null ? '—' : `${value}ms`

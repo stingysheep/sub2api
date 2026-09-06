@@ -14,7 +14,7 @@
     >
       {{ t('monitorCommon.maintenancePaused') }}
     </div>
-    <div v-else class="flex items-end gap-[2px] h-5 w-full">
+    <div v-else :class="['flex items-end w-full', compact ? 'gap-px h-3' : 'gap-[2px] h-5']">
       <div
         v-for="(bar, idx) in displayBars"
         :key="idx"
