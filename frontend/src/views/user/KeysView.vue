@@ -451,7 +451,7 @@
         <div class="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-dark-700">
           <div>
             <h2 class="text-sm font-semibold text-gray-900 dark:text-white">渠道状态</h2>
-            <p class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{{ monitorItems.length }} 个监控 · 自动刷新</p>
+            <p class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{{ sortedMonitorItems.length }} 个已启用渠道</p>
           </div>
           <button type="button" class="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-700 dark:hover:text-gray-200" :disabled="monitorLoading" title="刷新渠道状态" aria-label="刷新渠道状态" @click="loadChannelMonitors">
             <Icon name="refresh" size="sm" :class="monitorLoading ? 'animate-spin' : ''" />
@@ -462,7 +462,7 @@
             <div v-for="n in 5" :key="n" class="h-24 animate-pulse rounded-xl bg-gray-100 dark:bg-dark-700" />
           </div>
           <div v-else-if="monitorItems.length === 0" class="py-8 text-center text-xs text-gray-500 dark:text-gray-400">暂无可用渠道监控</div>
-          <div v-else v-for="monitor in monitorItems" :key="monitor.id" class="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-dark-700 dark:bg-dark-900/40">
+          <div v-else v-for="monitor in sortedMonitorItems" :key="monitor.id" class="rounded-xl border border-gray-100 bg-gray-50/70 p-3 dark:border-dark-700 dark:bg-dark-900/40">
             <div class="flex items-start gap-2">
               <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="monitorStatusDotClass(monitor.primary_status)" />
               <div class="min-w-0 flex-1">
@@ -475,7 +475,7 @@
                   <span>{{ formatMonitorLatency(monitor.primary_latency_ms) }}</span>
                   <span v-if="monitor.monitor_group_name" class="truncate">· {{ monitor.monitor_group_name }}</span>
                 </div>
-                <div class="mt-2 h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"><div class="h-full rounded-full" :class="monitorStatusBarClass(monitor.primary_status)" :style="{ width: `${Math.max(0, Math.min(100, monitor.availability_7d || 0))}%` }" /></div>
+                <MonitorTimeline :buckets="monitor.timeline" :countdown-seconds="0" :length="60" compact />
               </div>
             </div>
           </div>
@@ -1184,6 +1184,7 @@ import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import type { UserMonitorView } from '@/api/channelMonitor'
 import { formatMultiplier } from '@/utils/formatters'
+import MonitorTimeline from '@/components/user/monitor/MonitorTimeline.vue'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
@@ -1312,6 +1313,13 @@ const columns = computed<Column[]>(() =>
 
 const apiKeys = ref<ApiKey[]>([])
 const monitorItems = ref<UserMonitorView[]>([])
+const sortedMonitorItems = computed(() => [...monitorItems.value].sort((a, b) =>
+  (a.monitor_group_id == null ? Number.MAX_SAFE_INTEGER : a.monitor_group_sort_order) -
+    (b.monitor_group_id == null ? Number.MAX_SAFE_INTEGER : b.monitor_group_sort_order) ||
+  (a.monitor_group_id ?? Number.MAX_SAFE_INTEGER) - (b.monitor_group_id ?? Number.MAX_SAFE_INTEGER) ||
+  (a.monitor_sort_order ?? 0) - (b.monitor_sort_order ?? 0) ||
+  a.id - b.id,
+))
 const monitorLoading = ref(false)
 let monitorAbortController: AbortController | null = null
 const groups = ref<Group[]>([])
@@ -1503,12 +1511,6 @@ function monitorStatusLabel(status: UserMonitorView['primary_status']): string {
   return '未知'
 }
 function monitorStatusDotClass(status: UserMonitorView['primary_status']): string {
-  if (status === 'operational') return 'bg-emerald-500'
-  if (status === 'degraded') return 'bg-amber-500'
-  if (status === 'failed' || status === 'error') return 'bg-red-500'
-  return 'bg-gray-400'
-}
-function monitorStatusBarClass(status: UserMonitorView['primary_status']): string {
   if (status === 'operational') return 'bg-emerald-500'
   if (status === 'degraded') return 'bg-amber-500'
   if (status === 'failed' || status === 'error') return 'bg-red-500'

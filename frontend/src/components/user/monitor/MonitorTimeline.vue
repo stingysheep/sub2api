@@ -1,6 +1,7 @@
 <template>
-  <div class="mt-4 pt-3 border-t border-gray-100 dark:border-dark-700/60">
+  <div :class="compact ? 'mt-2' : 'mt-4 pt-3 border-t border-gray-100 dark:border-dark-700/60'">
     <div
+      v-if="!compact"
       class="flex justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2"
     >
       <span>{{ t('monitorCommon.history60pts', { n: length }) }}</span>
@@ -25,6 +26,7 @@
     </div>
 
     <div
+      v-if="!compact"
       class="mt-1 flex justify-between text-[9px] uppercase tracking-widest text-gray-400"
     >
       <span>{{ t('monitorCommon.past') }}</span>
@@ -44,10 +46,12 @@ const props = withDefaults(defineProps<{
   countdownSeconds: number
   length?: number
   maintenance?: boolean
+  compact?: boolean
 }>(), {
   buckets: () => [],
   length: 60,
   maintenance: false,
+  compact: false,
 })
 
 const { t } = useI18n()
