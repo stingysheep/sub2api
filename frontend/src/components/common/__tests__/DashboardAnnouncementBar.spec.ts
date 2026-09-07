@@ -24,4 +24,8 @@ describe('dashboard notice separation', () => {
     expect(source).toContain('<span v-if="isAdmin" class="dashboard-announcement__title">')
     expect(source).toContain('<span v-if="isAdmin" class="dashboard-announcement__separator">')
   })
+
+  it('uses the enlarged announcement typography', () => {
+    expect(source).toContain('font-size: 1.125rem;')
+  })
 })

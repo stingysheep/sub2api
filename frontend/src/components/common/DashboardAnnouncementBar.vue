@@ -148,7 +148,7 @@ async function saveEditor() {
   overflow: hidden;
   padding: 0 1rem;
   color: rgb(71 85 105);
-  font-size: 0.875rem;
+  font-size: 1.125rem;
   line-height: 1.5rem;
 }
 
