@@ -351,7 +351,7 @@ watch(() => props.show, (val) => {
     newRate.value = null
     loadEntries()
   }
-})
+}, { immediate: true })
 
 const handlePageSizeChange = (newSize: number) => {
   pageSize.value = newSize

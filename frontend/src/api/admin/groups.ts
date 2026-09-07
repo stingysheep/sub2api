@@ -21,6 +21,29 @@ export interface LiveCapability {
   reason?: string
 }
 
+export interface GroupCategory {
+  id: number
+  sort_order: number
+  name: string
+  group_ids: number[]
+}
+
+export async function getCategories(): Promise<GroupCategory[]> {
+  const { data } = await apiClient.get<GroupCategory[]>('/admin/groups/categories')
+  return data || []
+}
+
+export async function updateCategories(
+  categories: GroupCategory[],
+  expectedCategories: GroupCategory[],
+): Promise<GroupCategory[]> {
+  const { data } = await apiClient.put<GroupCategory[]>('/admin/groups/categories', {
+    categories,
+    expected_categories: expectedCategories,
+  })
+  return data || []
+}
+
 /**
  * List all groups with pagination
  * @param page - Page number (default: 1)
@@ -498,7 +521,9 @@ export const groupsAPI = {
   batchSetGroupRPMOverrides,
   updateSortOrder,
   getUsageSummary,
-  getCapacitySummary
+  getCapacitySummary,
+  getCategories,
+  updateCategories
 }
 
 export default groupsAPI

@@ -218,7 +218,7 @@ watch(() => props.show, (v) => {
     typeFilter.value = ''
     loadHistory(1)
   }
-})
+}, { immediate: true })
 
 const loadHistory = async (page: number) => {
   if (!props.user) return

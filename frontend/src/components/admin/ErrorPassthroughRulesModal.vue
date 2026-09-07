@@ -493,7 +493,7 @@ watch(() => props.show, (newVal) => {
   if (newVal) {
     loadRules()
   }
-})
+}, { immediate: true })
 
 const loadRules = async () => {
   loading.value = true

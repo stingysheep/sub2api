@@ -45,7 +45,7 @@
         </div>
 
         <!-- Tab: Security — Admin API Key -->
-        <div v-show="activeTab === 'security'" class="space-y-6">
+        <div v-if="isSettingsTabMounted('security')" v-show="activeTab === 'security'" data-settings-panel="security" class="space-y-6">
           <!-- Admin API Key Settings -->
           <div class="card">
             <div
@@ -202,7 +202,7 @@
         <!-- /Tab: Security — Admin API Key -->
 
         <!-- Tab: Gateway -->
-        <div v-show="activeTab === 'gateway'" class="space-y-6">
+        <div v-if="isSettingsTabMounted('gateway')" v-show="activeTab === 'gateway'" data-settings-panel="gateway" class="space-y-6">
           <!-- Overload Cooldown (529) Settings -->
           <div class="card">
             <div
@@ -1421,7 +1421,7 @@
         <!-- /Tab: Gateway -->
 
         <!-- Tab: Security — Registration, Turnstile, LinuxDo -->
-        <div v-show="activeTab === 'security'" class="space-y-6">
+        <div v-if="isSettingsTabMounted('security')" v-show="activeTab === 'security'" data-settings-panel="security" class="space-y-6">
           <!-- Registration Settings -->
           <div class="card">
             <div
@@ -3822,7 +3822,7 @@
         <!-- /Tab: Security — Registration, Turnstile, LinuxDo, OIDC -->
 
         <!-- Tab: Users -->
-        <div v-show="activeTab === 'users'" class="space-y-6">
+        <div v-if="isSettingsTabMounted('users')" v-show="activeTab === 'users'" data-settings-panel="users" class="space-y-6">
           <!-- Default Settings -->
           <div class="card">
             <div
@@ -4438,7 +4438,7 @@
         <!-- /Tab: Users -->
 
         <!-- Tab: Gateway — Claude Code, Scheduling -->
-        <div v-show="activeTab === 'gateway'" class="space-y-6">
+        <div v-if="isSettingsTabMounted('gateway')" v-show="activeTab === 'gateway'" data-settings-panel="gateway" class="space-y-6">
           <!-- Claude Code Settings -->
           <div class="card">
             <div
@@ -6247,7 +6247,7 @@
         <!-- /Tab: Gateway — Claude Code, Scheduling -->
 
         <!-- Tab: General -->
-        <div v-show="activeTab === 'general'" class="space-y-6">
+        <div v-if="isSettingsTabMounted('general')" v-show="activeTab === 'general'" data-settings-panel="general" class="space-y-6">
           <!-- Site Settings -->
           <div class="card">
             <div
@@ -6809,7 +6809,7 @@
 	        <!-- /Tab: General -->
 
 	        <!-- Tab: Login Agreement -->
-	        <div v-show="activeTab === 'agreement'" class="space-y-6">
+	        <div v-if="isSettingsTabMounted('agreement')" v-show="activeTab === 'agreement'" data-settings-panel="agreement" class="space-y-6">
 	          <div class="card">
 	            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
 	              <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -7011,7 +7011,7 @@
         <!-- /Tab: Login Agreement -->
 
 	        <!-- Tab: Features (功能开关) -->
-        <div v-show="activeTab === 'features'" class="space-y-6">
+        <div v-if="isSettingsTabMounted('features')" v-show="activeTab === 'features'" data-settings-panel="features" class="space-y-6">
 
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -7746,7 +7746,7 @@
 
         <!-- Tab: Email -->
         <!-- Tab: Payment -->
-        <div v-show="activeTab === 'payment'" class="space-y-6">
+        <div v-if="isSettingsTabMounted('payment')" v-show="activeTab === 'payment'" data-settings-panel="payment" class="space-y-6">
           <!-- Payment System Settings -->
           <div class="card">
             <div
@@ -8297,7 +8297,7 @@
           />
         </div>
 
-        <div v-show="activeTab === 'email'" class="space-y-6">
+        <div v-if="isSettingsTabMounted('email')" v-show="activeTab === 'email'" data-settings-panel="email" class="space-y-6">
           <!-- Email disabled hint - show when email_verify_enabled is off -->
           <div v-if="!form.email_verify_enabled" class="card">
             <div class="p-6">
@@ -8719,7 +8719,7 @@
         <!-- /Tab: Email -->
 
         <!-- Tab: Backup -->
-        <div v-show="activeTab === 'backup'">
+        <div v-if="isSettingsTabMounted('backup')" v-show="activeTab === 'backup'" data-settings-panel="backup">
           <BackupSettings />
         </div>
 
@@ -8907,6 +8907,7 @@ type SettingsTab =
   | "email"
   | "backup";
 const activeTab = ref<SettingsTab>("general");
+const mountedSettingsTabs = reactive<Set<SettingsTab>>(new Set(["general"]));
 const settingsTabs = [
   { key: "general" as SettingsTab, icon: "home" as const },
   { key: "agreement" as SettingsTab, icon: "document" as const },
@@ -8928,7 +8929,12 @@ const settingsTabKeyboardActions = {
   End: "last",
 } as const;
 
+function isSettingsTabMounted(tab: SettingsTab): boolean {
+  return mountedSettingsTabs.has(tab);
+}
+
 function selectSettingsTab(tab: SettingsTab): void {
+  mountedSettingsTabs.add(tab);
   activeTab.value = tab;
 }
 

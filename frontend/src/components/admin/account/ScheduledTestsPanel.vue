@@ -541,7 +541,8 @@ watch(
       showAddForm.value = false
       showDeleteConfirm.value = false
     }
-  }
+  },
+  { immediate: true }
 )
 
 const loadPlans = async () => {

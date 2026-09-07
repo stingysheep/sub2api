@@ -403,5 +403,5 @@ watch(() => props.show, (isShow) => {
   if (isShow) {
     loadAttributes()
   }
-})
+}, { immediate: true })
 </script>

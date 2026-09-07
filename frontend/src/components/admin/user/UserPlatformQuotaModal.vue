@@ -201,6 +201,7 @@ async function load() {
 watch(
   () => props.show,
   (s) => { if (s && props.user) load() },
+  { immediate: true },
 )
 
 function onClearAll() {

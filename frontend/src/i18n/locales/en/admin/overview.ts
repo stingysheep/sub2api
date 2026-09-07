@@ -975,6 +975,23 @@ export default {
         yes: 'Yes',
         no: 'No'
       },
+      categories: {
+        title: 'Group Categories',
+        description: 'Organize groups with custom categories.',
+        manage: 'Manage categories',
+        manageHint: 'Create categories and assign groups here. A group can belong to only one category.',
+        allGroups: 'All groups',
+        uncategorized: 'Uncategorized',
+        namePlaceholder: 'Category name',
+        add: 'Add category',
+        noGroups: 'No groups yet',
+        nameRequired: 'Please enter a name for every category.',
+        inUse: 'Move groups out of this category before deleting it.',
+        saved: 'Group categories saved.',
+        orderSaved: 'Group category order saved.',
+        loadFailed: 'Failed to load group categories.',
+        saveFailed: 'Failed to save group categories.'
+      },
       enterGroupName: 'Enter group name',
       optionalDescription: 'Optional description',
       platformHint: 'Select the platform this group is associated with',

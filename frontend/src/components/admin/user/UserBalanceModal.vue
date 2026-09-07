@@ -52,7 +52,7 @@ const props = defineProps<{ show: boolean, user: AdminUser | null, operation: 'a
 const emit = defineEmits(['close', 'success']); const { t } = useI18n(); const appStore = useAppStore()
 
 const submitting = ref(false); const showConfirm = ref(false); const form = reactive({ amount: 0, notes: '', source: 'free' as 'free' | 'paid' })
-watch(() => props.show, (v) => { if(v) { form.amount = 0; form.notes = ''; form.source = 'free'; showConfirm.value = false } })
+watch(() => props.show, (v) => { if(v) { form.amount = 0; form.notes = ''; form.source = 'free'; showConfirm.value = false } }, { immediate: true })
 
 // 格式化余额：显示完整精度，去除尾部多余的0
 const formatBalance = (value: number) => {

@@ -111,7 +111,7 @@ watch(() => props.show, (v) => {
   if (v) {
     selectedGroupId.value = null
   }
-})
+}, { immediate: true })
 
 const handleReplace = async () => {
   if (!props.user || !props.oldGroup || !selectedGroupId.value) return

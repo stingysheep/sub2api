@@ -1006,6 +1006,23 @@ export default {
         privacySetOnlyEnabled: '已启用 — Privacy 未设置的账号将被排除',
         disabled: '未启用'
       },
+      categories: {
+        title: '分组分类',
+        description: '按自定义分类整理分组。',
+        manage: '管理分类',
+        manageHint: '创建分类并在这里归纳分组。一个分组只能归入一个分类。',
+        allGroups: '全部分组',
+        uncategorized: '未分类分组',
+        namePlaceholder: '分类名称',
+        add: '新增分类',
+        noGroups: '暂无分组',
+        nameRequired: '请填写每个分类的名称。',
+        inUse: '分类中仍有分组，请先移出分组后再删除。',
+        saved: '分组分类已保存。',
+        orderSaved: '分组分类顺序已保存。',
+        loadFailed: '加载分组分类失败。',
+        saveFailed: '保存分组分类失败。'
+      },
       enterGroupName: '请输入分组名称',
       optionalDescription: '可选描述',
       platformHint: '选择此分组关联的平台',

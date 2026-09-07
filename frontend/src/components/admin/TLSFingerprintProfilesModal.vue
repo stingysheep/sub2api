@@ -384,7 +384,7 @@ watch(() => props.show, (newVal) => {
   if (newVal) {
     loadProfiles()
   }
-})
+}, { immediate: true })
 
 const loadProfiles = async () => {
   loading.value = true

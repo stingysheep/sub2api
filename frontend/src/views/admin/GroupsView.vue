@@ -147,6 +147,17 @@
       </template>
 
       <template #table>
+        <div class="group-management-workspace flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+          <div class="group-category-pane w-full min-h-0 lg:flex-none">
+            <GroupCategoriesPanel
+              :categories="groupCategories"
+              :groups="categoryGroups"
+              :active-category-id="activeCategoryId"
+              @select="selectCategory"
+              @updated="handleCategoriesUpdated"
+            />
+          </div>
+          <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <DataTable
           :columns="columns"
           :data="groups"
@@ -644,6 +655,8 @@
             />
           </template>
         </DataTable>
+          </div>
+        </div>
       </template>
 
       <template #pagination>
@@ -703,6 +716,7 @@
     </BaseDialog>
 
     <EditAccountModal
+      v-if="showNestedAccountEditor"
       :show="showNestedAccountEditor"
       :account="editingNestedAccount"
       :proxies="accountEditProxies"
@@ -712,6 +726,7 @@
     />
 
     <AccountTestModal
+      v-if="showNestedAccountTest"
       :show="showNestedAccountTest"
       :account="testingNestedAccount"
       @close="closeNestedAccountTest"
@@ -4666,6 +4681,7 @@
 
     <!-- Group Rate Multipliers Modal -->
     <GroupRateMultipliersModal
+      v-if="showRateMultipliersModal"
       :show="showRateMultipliersModal"
       :group="rateMultipliersGroup"
       @close="showRateMultipliersModal = false"
@@ -4674,6 +4690,7 @@
 
     <!-- Group RPM Overrides Modal -->
     <GroupRPMOverridesModal
+      v-if="showRPMOverridesModal"
       :show="showRPMOverridesModal"
       :group="rpmOverridesGroup"
       @close="showRPMOverridesModal = false"
@@ -4683,7 +4700,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
@@ -4703,26 +4720,28 @@ import type {
   Proxy as AccountProxy,
 } from "@/types";
 import type { UpstreamProviderProfile } from "@/api/admin/settings";
+import type { GroupCategory } from "@/api/admin/groups";
 import {
   CONCRETE_PLATFORM_OPTIONS,
   GROUP_PLATFORM_OPTIONS,
 } from "@/constants/platforms";
 import type { Column } from "@/components/common/types";
+const GroupCategoriesPanel = defineAsyncComponent(() => import("@/components/admin/group/GroupCategoriesPanel.vue"));
 import AppLayout from "@/components/layout/AppLayout.vue";
 import TablePageLayout from "@/components/layout/TablePageLayout.vue";
 import DataTable from "@/components/common/DataTable.vue";
 import Pagination from "@/components/common/Pagination.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
-import { EditAccountModal } from "@/components/account";
-import AccountTestModal from "@/components/admin/account/AccountTestModal.vue";
+const EditAccountModal = defineAsyncComponent(() => import("@/components/account/EditAccountModal.vue"));
+const AccountTestModal = defineAsyncComponent(() => import("@/components/admin/account/AccountTestModal.vue"));
 import UpstreamBillingRateCell from "@/components/account/UpstreamBillingRateCell.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import Select from "@/components/common/Select.vue";
 import PlatformIcon from "@/components/common/PlatformIcon.vue";
 import Icon from "@/components/icons/Icon.vue";
-import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
-import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
+const GroupRateMultipliersModal = defineAsyncComponent(() => import("@/components/admin/group/GroupRateMultipliersModal.vue"));
+const GroupRPMOverridesModal = defineAsyncComponent(() => import("@/components/admin/group/GroupRPMOverridesModal.vue"));
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import CodexManifestAccountsField from "@/components/admin/group/CodexManifestAccountsField.vue";
@@ -5195,6 +5214,9 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
 });
 
 const groups = ref<AdminGroup[]>([]);
+const categoryGroups = ref<AdminGroup[]>([]);
+const groupCategories = ref<GroupCategory[]>([]);
+const activeCategoryId = ref<'all' | 'uncategorized' | number>('all');
 const expandedGroupIds = ref<number[]>([]);
 const groupAccounts = ref<Record<number, Account[]>>({});
 const groupAccountsLoading = ref<Record<number, boolean>>({});
@@ -6499,6 +6521,30 @@ const cancelUnsupportedLive = () => {
   pendingLiveForm.value = null;
 };
 
+const loadGroupCategories = async () => {
+  try {
+    const [categories, allGroups] = await Promise.all([
+      adminAPI.groups.getCategories(),
+      adminAPI.groups.getAllIncludingInactive(),
+    ]);
+    groupCategories.value = categories;
+    categoryGroups.value = allGroups;
+  } catch (error) {
+    console.error("Error loading group categories:", error);
+  }
+};
+
+const selectCategory = (selection: 'all' | 'uncategorized' | number) => {
+  activeCategoryId.value = selection;
+  pagination.page = 1;
+  loadGroups();
+};
+
+const handleCategoriesUpdated = (categories: GroupCategory[]) => {
+  groupCategories.value = categories;
+  if (activeCategoryId.value !== 'all') loadGroups();
+};
+
 const loadGroups = async () => {
   if (abortController) {
     abortController.abort();
@@ -6508,6 +6554,39 @@ const loadGroups = async () => {
   const { signal } = currentController;
   loading.value = true;
   try {
+    if (activeCategoryId.value !== 'all') {
+      const allGroups = categoryGroups.value.length > 0
+        ? categoryGroups.value
+        : await adminAPI.groups.getAllIncludingInactive();
+      const categoryByGroupID = new Map<number, number>();
+      for (const category of groupCategories.value) {
+        for (const groupID of category.group_ids) categoryByGroupID.set(groupID, category.id);
+      }
+      const selectedGroups = allGroups.filter(group => {
+        const categoryID = categoryByGroupID.get(group.id);
+        const matchesCategory = activeCategoryId.value === 'uncategorized'
+          ? categoryID === undefined
+          : categoryID === activeCategoryId.value;
+        if (!matchesCategory) return false;
+        if (filters.platform && group.platform !== filters.platform) return false;
+        if (filters.status && group.status !== filters.status) return false;
+        if (filters.is_exclusive && group.is_exclusive !== (filters.is_exclusive === 'true')) return false;
+        return !searchQuery.value.trim() || group.name.toLowerCase().includes(searchQuery.value.trim().toLowerCase());
+      });
+      selectedGroups.sort((a, b) => {
+        const aValue = a[sortState.sort_by as keyof AdminGroup];
+        const bValue = b[sortState.sort_by as keyof AdminGroup];
+        const result = String(aValue ?? '').localeCompare(String(bValue ?? ''), undefined, { numeric: true });
+        return sortState.sort_order === 'asc' ? result : -result;
+      });
+      pagination.total = selectedGroups.length;
+      pagination.pages = Math.max(1, Math.ceil(selectedGroups.length / pagination.page_size));
+      const start = (pagination.page - 1) * pagination.page_size;
+      groups.value = selectedGroups.slice(start, start + pagination.page_size);
+      if (hasVisibleUsageSummaryConsumer.value) loadUsageSummary(); else usageLoading.value = false;
+      if (hasVisibleCapacityColumn.value) loadCapacitySummary();
+      return;
+    }
     const response = await adminAPI.groups.list(
       pagination.page,
       pagination.page_size,
@@ -7710,6 +7789,7 @@ onMounted(() => {
     console.error("Failed to restore expanded group state:", error);
   }
   loadGroups();
+  void loadGroupCategories();
   void loadLiveCapability();
   upstreamBillingClock = setInterval(() => {
     upstreamBillingNow.value = Date.now();
@@ -7730,6 +7810,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.group-category-pane { width: 220px; }
+@media (max-width: 1023px) { .group-category-pane { width: 100%; } }
 .nested-account-move {
   transition: transform 180ms ease;
 }

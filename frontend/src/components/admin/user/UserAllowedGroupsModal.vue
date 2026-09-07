@@ -244,7 +244,8 @@ watch(
     if (v && props.user) {
       load()
     }
-  }
+  },
+  { immediate: true }
 )
 
 const load = async () => {

@@ -159,7 +159,8 @@ watch(
   () => props.show,
   (show) => {
     if (show) reset()
-  }
+  },
+  { immediate: true }
 )
 
 const handleSubmit = async () => {

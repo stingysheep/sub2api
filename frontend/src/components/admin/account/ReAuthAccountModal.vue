@@ -347,7 +347,8 @@ watch(
     } else {
       resetState()
     }
-  }
+  },
+  { immediate: true }
 )
 
 // Methods

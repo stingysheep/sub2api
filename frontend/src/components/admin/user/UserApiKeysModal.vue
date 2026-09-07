@@ -151,7 +151,7 @@ watch(() => props.show, (v) => {
   } else {
     closeGroupSelector()
   }
-})
+}, { immediate: true })
 
 const load = async () => {
   if (!props.user) return

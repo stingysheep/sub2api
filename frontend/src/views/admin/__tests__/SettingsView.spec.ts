@@ -720,6 +720,23 @@ describe("admin SettingsView payment visible method controls", () => {
     adminSettingsFetch.mockResolvedValue(undefined);
   });
 
+  it("lazy-mounts unvisited settings tabs while preserving visited form drafts", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find("backup-settings-stub").exists()).toBe(false);
+    expect(wrapper.find('[data-settings-panel="security"]').exists()).toBe(false);
+    const siteName = wrapper.get('input[placeholder="admin.settings.site.siteNamePlaceholder"]');
+    await siteName.setValue("Draft site name");
+    await wrapper.get("#settings-tab-backup").trigger("click");
+    await flushPromises();
+    expect(wrapper.find("backup-settings-stub").exists()).toBe(true);
+    await wrapper.get("#settings-tab-general").trigger("click");
+    await flushPromises();
+    expect(wrapper.find("backup-settings-stub").exists()).toBe(true);
+    expect((siteName.element as HTMLInputElement).value).toBe("Draft site name");
+    wrapper.unmount();
+  });
+
   it("submits the compact home page toggle", async () => {
     const wrapper = mountView();
     await flushPromises();
@@ -750,6 +767,7 @@ describe("admin SettingsView payment visible method controls", () => {
 
     const wrapper = mountView();
     await flushPromises();
+    await openSecurityTab(wrapper);
 
     expect(getPanelRateLimitSettings).toHaveBeenCalled();
     expect(wrapper.text()).toContain("admin.settings.panelRateLimit.title");
@@ -1259,6 +1277,7 @@ describe("admin SettingsView payment visible method controls", () => {
     const wrapper = mountView();
 
     await flushPromises();
+    await openGatewayTab(wrapper);
 
     expect(wrapper.text()).toContain("OpenAI 实验调度策略");
     expect(wrapper.text()).toContain(
@@ -1416,6 +1435,7 @@ describe("admin SettingsView payment visible method controls", () => {
     const wrapper = mountView();
 
     await flushPromises();
+    await openGatewayTab(wrapper);
     expect(
       wrapper.find('[data-testid="openai-oauth-scheduling-rate-multiplier"]').exists(),
     ).toBe(false);

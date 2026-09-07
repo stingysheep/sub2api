@@ -687,7 +687,8 @@ watch(
     } else {
       stats.value = null
     }
-  }
+  },
+  { immediate: true }
 )
 
 const loadStats = async () => {

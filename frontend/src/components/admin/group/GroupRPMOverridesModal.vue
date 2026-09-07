@@ -299,7 +299,7 @@ watch(() => props.show, (val) => {
     newRpm.value = null
     loadEntries()
   }
-})
+}, { immediate: true })
 
 const handlePageSizeChange = (newSize: number) => {
   pageSize.value = newSize
