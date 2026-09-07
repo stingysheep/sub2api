@@ -10,13 +10,14 @@
           type="button"
           class="icon-btn"
           :class="reorderMode ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300' : 'text-gray-500'"
+          :disabled="!profilesReady || saving || loadingEditor"
           :aria-pressed="reorderMode"
           :title="reorderMode ? t('admin.accounts.upstreamProfiles.finishReorder') : t('admin.accounts.upstreamProfiles.reorder')"
           @click="reorderMode = !reorderMode"
         >
           <Icon :name="reorderMode ? 'check' : 'menu'" size="sm" />
         </button>
-        <button type="button" class="icon-btn text-gray-500" :title="t('admin.accounts.upstreamProfiles.manage')" @click="openEditor">
+        <button type="button" class="icon-btn text-gray-500" :disabled="saving || loadingEditor" :title="t('admin.accounts.upstreamProfiles.manage')" @click="openEditor">
           <Icon name="cog" size="sm" />
         </button>
       </div>
@@ -31,7 +32,7 @@
       >
         <Icon name="grid" size="sm" class="shrink-0" />
         <span class="min-w-0 flex-1 truncate">{{ t('admin.accounts.upstreamProfiles.allAccounts') }}</span>
-        <span class="profile-count">{{ props.accounts?.length || 0 }}</span>
+        <span class="profile-count">{{ (props.profileAccounts || props.accounts || []).length }}</span>
       </button>
 
       <VueDraggable
@@ -84,6 +85,18 @@
           </div>
         </div>
       </VueDraggable>
+
+      <p v-if="loadingEditor" role="status" class="px-2 py-1 text-xs text-gray-500">{{ t('admin.accounts.upstreamProfiles.loading') }}</p>
+      <!-- Referenced but missing definitions must not hide their accounts. Do not
+           save these placeholders as if they were the original categories. -->
+      <button
+        v-for="id in missingProfileIds" :key="`missing-${id}`" type="button"
+        class="profile-nav-item" :class="isProfileActive(id) && 'profile-nav-item-active'"
+        :data-testid="`missing-profile-${id}`" @click="selectProfile(id)"
+      >
+        <span class="min-w-0 flex-1 truncate">{{ t('admin.accounts.upstreamProfiles.missingProfile', { id }) }}</span>
+        <span class="profile-count">{{ profileAccountCount(id) }}</span>
+      </button>
 
       <div class="profile-nav-group mt-1 border-t border-dashed border-gray-200 pt-2 dark:border-dark-700">
         <div class="profile-nav-row">
@@ -148,12 +161,12 @@
             <input v-model="profile.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
             {{ t('admin.accounts.upstreamProfiles.enabled') }}
           </label>
-          <button type="button" class="p-1.5 text-gray-400 hover:text-red-600" :title="t('admin.accounts.upstreamProfiles.remove')" @click="removeProfile(index)">
+          <button type="button" class="p-1.5 text-gray-400 hover:text-red-600" :disabled="saving || profileAccountCount(profile.id) > 0" :title="profileAccountCount(profile.id) > 0 ? t('admin.accounts.upstreamProfiles.inUse') : t('admin.accounts.upstreamProfiles.remove')" @click="removeProfile(index)">
             <Icon name="trash" size="sm" />
           </button>
         </div>
       </div>
-      <button type="button" class="w-full rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500 hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400" @click="addProfile">
+      <button type="button" :disabled="saving" class="w-full rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-500 hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400" @click="addProfile">
         <Icon name="plus" size="sm" class="mr-1" />
         {{ t('admin.accounts.upstreamProfiles.add') }}
       </button>
@@ -173,6 +186,7 @@ import { useI18n } from 'vue-i18n'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
+import { extractApiErrorCode, extractApiErrorMessage } from '@/utils/apiError'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
@@ -207,6 +221,7 @@ const PLATFORM_LABELS: Record<AccountPlatform, string> = {
 
 const props = defineProps<{
   profiles: UpstreamProviderProfile[]
+  profilesReady?: boolean
   accounts?: Account[]
   /** Full filtered account set used for stable profile counts. */
   profileAccounts?: Account[]
@@ -219,6 +234,21 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const appStore = useAppStore()
 const showEditor = ref(false)
+const loadingEditor = ref(false)
+const editorSnapshot = ref<UpstreamProviderProfile[]>([])
+const missingProfileIds = computed(() => {
+  const known = new Set(props.profiles.map(profile => profile.id))
+  return [...new Set((props.profileAccounts || props.accounts || [])
+    .map(profileIDFor).filter((id): id is number => id !== null && !known.has(id)))].sort((a, b) => a - b)
+})
+const showSaveError = (error: unknown, fallback: string) => {
+  const code = extractApiErrorCode(error)
+  const label = code === 'UPSTREAM_PROFILES_STALE' ? 'stale' :
+    code === 'UPSTREAM_PROFILE_NAME_REQUIRED' ? 'nameRequired' :
+    code === 'UPSTREAM_PROFILE_FIELD_TOO_LONG' ? 'fieldTooLong' :
+    code === 'UPSTREAM_PROFILE_DUPLICATE_ID' ? 'duplicateId' : null
+  appStore.showError(label ? t(`admin.accounts.upstreamProfiles.${label}`) : extractApiErrorMessage(error, fallback))
+}
 const saving = ref(false)
 const savingOrder = ref(false)
 const reorderMode = ref(false)
@@ -292,36 +322,57 @@ watch(() => props.activeProfileId, (selection) => {
 }, { immediate: true, deep: true })
 
 const handleProfileDragEnd = async () => {
-  if (!reorderMode.value || savingOrder.value) return
+  if (!props.profilesReady || !reorderMode.value || savingOrder.value || saving.value) return
   const previous = [...props.profiles]
   savingOrder.value = true
   try {
     const updates = orderedProfiles.value.map((profile, index) => ({ ...profile, sort_order: index * 10 }))
-    const saved = await adminAPI.settings.updateUpstreamProviderProfiles(updates)
+    const saved = await adminAPI.settings.updateUpstreamProviderProfiles(updates, previous)
     orderedProfiles.value = saved.map(profile => ({ ...profile }))
     emit('updated', saved)
     appStore.showSuccess(t('admin.accounts.upstreamProfiles.orderSaved'))
   } catch (error) {
     orderedProfiles.value = [...previous].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id).map(profile => ({ ...profile }))
-    console.error('Failed to save upstream provider profile order:', error)
-    appStore.showError(t('admin.accounts.upstreamProfiles.orderSaveFailed'))
+    showSaveError(error, t('admin.accounts.upstreamProfiles.orderSaveFailed'))
   } finally {
     savingOrder.value = false
   }
 }
 
-const openEditor = () => {
-  draftProfiles.value = orderedProfiles.value.map(profile => ({ ...profile }))
-  showEditor.value = true
+const openEditor = async () => {
+  if (loadingEditor.value || saving.value) return
+  loadingEditor.value = true
+  try {
+    const current = await adminAPI.settings.getUpstreamProviderProfiles()
+    editorSnapshot.value = current.map(profile => ({ ...profile }))
+    draftProfiles.value = current.map(profile => ({ ...profile }))
+    emit('updated', current)
+    showEditor.value = true
+  } catch {
+    appStore.showError(t('admin.accounts.upstreamProfiles.loadFailed'))
+  } finally {
+    loadingEditor.value = false
+  }
 }
-const closeEditor = () => { showEditor.value = false }
+const closeEditor = () => { if (!saving.value) showEditor.value = false }
 const addProfile = () => {
   const maxOrder = Math.max(-10, ...draftProfiles.value.map(profile => profile.sort_order ?? 0))
-  const nextID = Math.max(0, ...draftProfiles.value.map(profile => profile.id)) + 1
+  if (saving.value) return
+  const referencedIds = (props.profileAccounts || props.accounts || []).map(account => profileIDFor(account) ?? 0)
+  const nextID = Math.max(0, ...draftProfiles.value.map(profile => profile.id),
+    ...editorSnapshot.value.map(profile => profile.id), ...referencedIds) + 1
   draftProfiles.value.push({ id: nextID, sort_order: maxOrder + 10, name: '', name_prefix: '', base_url: '', enabled: true })
 }
-const removeProfile = (index: number) => { draftProfiles.value.splice(index, 1) }
+const removeProfile = (index: number) => {
+  if (saving.value) return
+  if (profileAccountCount(draftProfiles.value[index].id) > 0) {
+    appStore.showError(t('admin.accounts.upstreamProfiles.inUse'))
+    return
+  }
+  draftProfiles.value.splice(index, 1)
+}
 const saveProfiles = async () => {
+  if (saving.value || !showEditor.value) return
   const profiles = draftProfiles.value.map((profile, index) => ({ ...profile, sort_order: index * 10 }))
   if (profiles.some(profile => !profile.name.trim())) {
     appStore.showError(t('admin.accounts.upstreamProfiles.nameRequired'))
@@ -329,14 +380,13 @@ const saveProfiles = async () => {
   }
   saving.value = true
   try {
-    const saved = await adminAPI.settings.updateUpstreamProviderProfiles(profiles)
+    const saved = await adminAPI.settings.updateUpstreamProviderProfiles(profiles, editorSnapshot.value)
     orderedProfiles.value = saved.map(profile => ({ ...profile }))
     emit('updated', saved)
     showEditor.value = false
     appStore.showSuccess(t('admin.accounts.upstreamProfiles.saved'))
   } catch (error) {
-    console.error('Failed to save upstream provider profiles:', error)
-    appStore.showError(t('admin.accounts.upstreamProfiles.saveFailed'))
+    showSaveError(error, t('admin.accounts.upstreamProfiles.saveFailed'))
   } finally {
     saving.value = false
   }

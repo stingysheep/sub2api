@@ -1087,8 +1087,9 @@ export async function getUpstreamProviderProfiles(): Promise<UpstreamProviderPro
 
 export async function updateUpstreamProviderProfiles(
   profiles: UpstreamProviderProfile[],
+  expectedProfiles: UpstreamProviderProfile[],
 ): Promise<UpstreamProviderProfile[]> {
-  const { data } = await apiClient.put<UpstreamProviderProfile[]>('/admin/settings/upstream-providers', { profiles })
+  const { data } = await apiClient.put<UpstreamProviderProfile[]>('/admin/settings/upstream-providers', { profiles, expected_profiles: expectedProfiles })
   return data
 }
 

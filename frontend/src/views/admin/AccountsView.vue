@@ -191,6 +191,7 @@
           <div class="account-profile-pane w-full min-h-0 lg:flex-none" :style="{ '--profile-nav-width': `${profileNavWidth}px` }">
             <UpstreamProviderProfilesPanel
               :profiles="upstreamProfiles"
+              :profiles-ready="upstreamProfilesReady"
               :accounts="accounts"
               :profile-accounts="profileAccounts"
               :active-profile-id="activeUpstreamProfileId"
@@ -592,6 +593,7 @@ const accountGroupsForRow = (account: Pick<AccountListItem, 'group_ids'>): Admin
   return groupIDs.map(id => groupsByID.value.get(id)).filter((group): group is AdminGroup => Boolean(group))
 }
 const upstreamProfiles = ref<UpstreamProviderProfile[]>([])
+const upstreamProfilesReady = ref(false)
 const activeUpstreamProfileId = ref<UpstreamProfileSelection>('all')
 const defaultCreateUpstreamProfileId = computed<number | null>(() =>
   typeof activeUpstreamProfileId.value === 'number'
@@ -2584,6 +2586,7 @@ const handleAccountUpdated = (updatedAccount: Account) => {
 }
 const handleUpstreamProfilesUpdated = (profiles: UpstreamProviderProfile[]) => {
   upstreamProfiles.value = profiles
+  upstreamProfilesReady.value = true
   const active = activeUpstreamProfileId.value
   const activeProfileID = typeof active === 'number' ? active : typeof active === 'object' ? active.profileId : null
   if (typeof activeProfileID === 'number' && !profiles.some(profile => profile.id === activeProfileID)) {
@@ -2877,6 +2880,7 @@ onMounted(async () => {
   ])
   try {
     upstreamProfiles.value = await adminAPI.settings.getUpstreamProviderProfiles()
+    upstreamProfilesReady.value = true
   } catch (error) {
     console.error('Failed to load upstream provider profiles:', error)
   }

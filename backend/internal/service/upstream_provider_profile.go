@@ -3,9 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 // SettingKeyUpstreamProviderProfiles stores administrator-maintained upstream
@@ -42,7 +46,10 @@ func (s *SettingService) GetUpstreamProviderProfiles(ctx context.Context) ([]Ups
 	return normalizeUpstreamProviderProfiles(profiles)
 }
 
-func (s *SettingService) SetUpstreamProviderProfiles(ctx context.Context, profiles []UpstreamProviderProfile) ([]UpstreamProviderProfile, error) {
+func (s *SettingService) SetUpstreamProviderProfiles(ctx context.Context, profiles, expected []UpstreamProviderProfile) ([]UpstreamProviderProfile, error) {
+	if expected == nil {
+		return nil, infraerrors.Conflict("UPSTREAM_PROFILES_STALE", "Reload upstream profiles before saving")
+	}
 	normalized, err := normalizeUpstreamProviderProfiles(profiles)
 	if err != nil {
 		return nil, err
@@ -51,8 +58,43 @@ func (s *SettingService) SetUpstreamProviderProfiles(ctx context.Context, profil
 	if err != nil {
 		return nil, fmt.Errorf("encode upstream provider profiles: %w", err)
 	}
-	if err := s.settingRepo.Set(ctx, SettingKeyUpstreamProviderProfiles, string(payload)); err != nil {
+	// Compare the editor snapshot against storage, not a potentially empty UI prop.
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyUpstreamProviderProfiles)
+	var previous *string
+	if err == nil {
+		previous = &raw
+	} else if !errors.Is(err, ErrSettingNotFound) {
+		return nil, fmt.Errorf("read upstream provider profiles before save: %w", err)
+	}
+	current := []UpstreamProviderProfile{}
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &current); err != nil {
+			return nil, fmt.Errorf("decode upstream provider profiles before save: %w", err)
+		}
+	}
+	current, err = normalizeUpstreamProviderProfiles(current)
+	if err != nil {
+		return nil, err
+	}
+	expected, err = normalizeUpstreamProviderProfiles(expected)
+	if err != nil {
+		return nil, err
+	}
+	if !reflect.DeepEqual(current, expected) {
+		return nil, infraerrors.Conflict("UPSTREAM_PROFILES_STALE", "Upstream profiles changed; reload before saving")
+	}
+	store, ok := s.settingRepo.(interface {
+		CompareAndSwap(context.Context, string, *string, string) (bool, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("upstream profile store does not support safe updates")
+	}
+	saved, err := store.CompareAndSwap(ctx, SettingKeyUpstreamProviderProfiles, previous, string(payload))
+	if err != nil {
 		return nil, fmt.Errorf("save upstream provider profiles: %w", err)
+	}
+	if !saved {
+		return nil, infraerrors.Conflict("UPSTREAM_PROFILES_STALE", "Upstream profiles changed; reload before saving")
 	}
 	return normalized, nil
 }
@@ -61,16 +103,23 @@ func normalizeUpstreamProviderProfiles(profiles []UpstreamProviderProfile) ([]Up
 	result := make([]UpstreamProviderProfile, 0, len(profiles))
 	seenIDs := make(map[int64]struct{}, len(profiles))
 	maxID := int64(0)
+	// Reserve all explicit IDs before assigning new ones; list order must not
+	// cause a new profile to collide with an existing account's category.
+	for _, profile := range profiles {
+		if profile.ID > maxID {
+			maxID = profile.ID
+		}
+	}
 	for _, profile := range profiles {
 		profile.Name = strings.TrimSpace(profile.Name)
 		profile.NamePrefix = strings.TrimSpace(profile.NamePrefix)
 		profile.BaseURL = strings.TrimSpace(profile.BaseURL)
 		profile.Platform = strings.TrimSpace(profile.Platform)
 		if profile.Name == "" {
-			return nil, fmt.Errorf("upstream provider profile name is required")
+			return nil, infraerrors.BadRequest("UPSTREAM_PROFILE_NAME_REQUIRED", "Upstream provider profile name is required")
 		}
 		if len(profile.Name) > 100 || len(profile.NamePrefix) > 100 || len(profile.BaseURL) > 500 {
-			return nil, fmt.Errorf("upstream provider profile field is too long")
+			return nil, infraerrors.BadRequest("UPSTREAM_PROFILE_FIELD_TOO_LONG", "Upstream provider profile field is too long")
 		}
 		if profile.ID > maxID {
 			maxID = profile.ID
@@ -80,7 +129,7 @@ func normalizeUpstreamProviderProfiles(profiles []UpstreamProviderProfile) ([]Up
 			profile.ID = maxID
 		}
 		if _, exists := seenIDs[profile.ID]; exists {
-			return nil, fmt.Errorf("upstream provider profile id %d is duplicated", profile.ID)
+			return nil, infraerrors.BadRequest("UPSTREAM_PROFILE_DUPLICATE_ID", "Upstream provider profile ID is duplicated")
 		}
 		seenIDs[profile.ID] = struct{}{}
 		result = append(result, profile)

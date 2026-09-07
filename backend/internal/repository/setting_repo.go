@@ -103,3 +103,18 @@ func (r *settingRepository) Delete(ctx context.Context, key string) error {
 	_, err := r.client.Setting.Delete().Where(setting.KeyEQ(key)).Exec(ctx)
 	return err
 }
+
+// CompareAndSwap prevents a stale settings editor from overwriting newer data.
+// A nil previous value means the row must not exist (first-time setup).
+func (r *settingRepository) CompareAndSwap(ctx context.Context, key string, previous *string, value string) (bool, error) {
+	if previous == nil {
+		err := r.client.Setting.Create().SetKey(key).SetValue(value).SetUpdatedAt(time.Now()).Exec(ctx)
+		if ent.IsConstraintError(err) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	n, err := r.client.Setting.Update().Where(setting.KeyEQ(key), setting.ValueEQ(*previous)).
+		SetValue(value).SetUpdatedAt(time.Now()).Save(ctx)
+	return n == 1, err
+}

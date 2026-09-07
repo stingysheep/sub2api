@@ -7,7 +7,8 @@ import (
 )
 
 type upstreamProviderProfilesRequest struct {
-	Profiles []service.UpstreamProviderProfile `json:"profiles"`
+	Profiles         *[]service.UpstreamProviderProfile `json:"profiles"`
+	ExpectedProfiles *[]service.UpstreamProviderProfile `json:"expected_profiles"`
 }
 
 // GetUpstreamProviderProfiles returns administrator-only account naming and
@@ -29,7 +30,11 @@ func (h *SettingHandler) UpdateUpstreamProviderProfiles(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	profiles, err := h.settingService.SetUpstreamProviderProfiles(c.Request.Context(), req.Profiles)
+	if req.Profiles == nil || req.ExpectedProfiles == nil {
+		response.BadRequest(c, "profiles and expected_profiles are required; reload before saving")
+		return
+	}
+	profiles, err := h.settingService.SetUpstreamProviderProfiles(c.Request.Context(), *req.Profiles, *req.ExpectedProfiles)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
