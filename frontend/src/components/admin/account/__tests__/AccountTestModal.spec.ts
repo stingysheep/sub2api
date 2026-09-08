@@ -68,10 +68,10 @@ function mountModal(account: Record<string, unknown> = {
   platform: 'gemini',
   type: 'apikey',
   status: 'active'
-}) {
+}, show = false) {
   return mount(AccountTestModal, {
     props: {
-      show: false,
+      show,
       account
     } as any,
     global: {
@@ -91,6 +91,7 @@ function mountModal(account: Record<string, unknown> = {
 
 describe('AccountTestModal', () => {
   beforeEach(() => {
+    getAvailableModels.mockReset()
     getAvailableModels.mockResolvedValue([
       { id: 'gemini-2.0-flash', display_name: 'Gemini 2.0 Flash' },
       { id: 'gemini-2.5-flash-image', display_name: 'Gemini 2.5 Flash Image' },
@@ -117,6 +118,26 @@ describe('AccountTestModal', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('loads models on the first lazy-mounted open without testing the account', async () => {
+    getAvailableModels.mockResolvedValue([{ id: 'kimi-k3', display_name: 'kimi-k3' }])
+    const wrapper = mountModal({ id: 58, name: 'test-cn', platform: 'openai', type: 'apikey', status: 'active' }, true)
+    await flushPromises()
+    expect(getAvailableModels).toHaveBeenCalledTimes(1)
+    expect(getAvailableModels).toHaveBeenCalledWith(58)
+    const button = wrapper.findAll('button').find((item) => item.text().includes('admin.accounts.startTest'))
+    expect(button).toBeTruthy()
+    expect(button!.attributes('disabled')).toBeUndefined()
+    expect(global.fetch).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not load models for a closed modal', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+    expect(getAvailableModels).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('gemini 图片模型测试会携带提示词并渲染图片预览', async () => {
