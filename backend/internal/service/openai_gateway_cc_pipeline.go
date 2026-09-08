@@ -209,6 +209,13 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Authorization", "Bearer "+bearerToken)
+	// Keep API-key Chat Completions forwarding identical to the admin account
+	// connectivity probe. Some OpenAI-compatible upstreams (including Kimi
+	// gateways) require the Codex probe identity headers and otherwise return
+	// Cloudflare 403/1010 even though the same account test succeeds.
+	if account != nil && account.Type == AccountTypeAPIKey {
+		applyOpenAICodexProbeHeaders(upstreamReq.Header)
+	}
 	if stream {
 		upstreamReq.Header.Set("Accept", "text/event-stream")
 	} else {
