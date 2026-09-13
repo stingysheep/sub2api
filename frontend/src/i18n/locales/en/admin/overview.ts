@@ -1,6 +1,22 @@
 export default {
     // Dashboard
     dashboard: {
+      groupConcurrency: {
+        title: 'Live group concurrency',
+        description: 'In-flight requests and Live sessions by current API key group, refreshed every 5 seconds. Includes requests waiting for upstream capacity.',
+        showIdle: 'Show idle groups',
+        activeGroups: '{count} active groups',
+        total: '{count} concurrent requests / sessions',
+        updatedAt: 'Updated at {time}',
+        unassigned: 'Ungrouped',
+        active: 'In use',
+        idle: 'Idle',
+        unit: 'concurrent',
+        empty: 'No groups are currently in use',
+        failed: 'Concurrency data is unavailable. Please retry shortly.',
+        stale: 'Refresh failed. Showing the last successful snapshot, which may be stale.',
+      },
+
       title: 'Admin Dashboard',
       description: 'System overview and real-time statistics',
       apiKeys: 'API Keys',

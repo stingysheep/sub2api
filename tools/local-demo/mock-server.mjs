@@ -713,6 +713,7 @@ async function handle(req, res) {
     if (apiPath === '/admin/dashboard/trend') return api(res, { trend: trendRows(url), start_date: start.toISOString().slice(0, 10), end_date: end.toISOString().slice(0, 10), granularity })
     if (apiPath === '/admin/dashboard/models') return api(res, { models: modelRows(url), start_date: start.toISOString().slice(0, 10), end_date: end.toISOString().slice(0, 10) })
     if (apiPath === '/admin/dashboard/groups') return api(res, { groups: groupRows(url), start_date: start.toISOString().slice(0, 10), end_date: end.toISOString().slice(0, 10) })
+    if (apiPath === '/admin/dashboard/group-concurrency') return api(res, { timestamp: new Date().toISOString(), groups: groups.map((group, index) => ({ group_id: group.id, group_name: group.name, platform: group.platform, current_in_use: index === 0 ? 3 : 0 })) })
     if (apiPath === '/admin/dashboard/users-trend') return api(res, { trend: userTrendRows(url), start_date: start.toISOString().slice(0, 10), end_date: end.toISOString().slice(0, 10), granularity })
     if (apiPath === '/admin/dashboard/users-ranking') {
       const trend = userTrendRows(url)

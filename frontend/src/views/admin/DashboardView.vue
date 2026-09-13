@@ -264,6 +264,8 @@
           </div>
         </div>
 
+        <GroupConcurrencyPanel />
+
         <!-- Charts Section -->
         <div class="space-y-6">
           <!-- Date Range Filter -->
@@ -355,6 +357,7 @@ import { useAppStore } from '@/stores/app'
 
 const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
+import GroupConcurrencyPanel from '@/components/admin/GroupConcurrencyPanel.vue'
 import type {
   DashboardStats,
   TrendDataPoint,
@@ -801,6 +804,7 @@ onMounted(() => {
   void refreshBatchImageAccess()
   loadDashboardStats()
 })
+
 </script>
 
 <style scoped>

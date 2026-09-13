@@ -1,6 +1,22 @@
 export default {
     // Dashboard
     dashboard: {
+      groupConcurrency: {
+        title: '分组实时并发',
+        description: '按 API Key 当前所属分组统计在途请求与 Live 会话，每 5 秒刷新；包含等待上游的请求。',
+        showIdle: '显示空闲分组',
+        activeGroups: '{count} 个分组使用中',
+        total: '当前共 {count} 并发',
+        updatedAt: '更新于 {time}',
+        unassigned: '未分组',
+        active: '使用中',
+        idle: '空闲',
+        unit: '并发',
+        empty: '当前没有分组正在使用',
+        failed: '并发数据暂时不可用，请稍后重试。',
+        stale: '刷新失败，以下为上次成功的数据，可能已过期。',
+      },
+
       title: '管理控制台',
       description: '系统概览与统计数据',
       apiKeys: 'API 密钥',

@@ -17,14 +17,16 @@ import (
 
 // DashboardHandler handles admin dashboard statistics
 type DashboardHandler struct {
+	apiKeyService      *service.APIKeyService
 	dashboardService   *service.DashboardService
 	aggregationService *service.DashboardAggregationService
 	startTime          time.Time // Server start time for uptime calculation
 }
 
 // NewDashboardHandler creates a new admin dashboard handler
-func NewDashboardHandler(dashboardService *service.DashboardService, aggregationService *service.DashboardAggregationService) *DashboardHandler {
+func NewDashboardHandler(dashboardService *service.DashboardService, aggregationService *service.DashboardAggregationService, apiKeyService *service.APIKeyService) *DashboardHandler {
 	return &DashboardHandler{
+		apiKeyService:      apiKeyService,
 		dashboardService:   dashboardService,
 		aggregationService: aggregationService,
 		startTime:          time.Now(),
@@ -803,4 +805,15 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 		"start_date": startTime.Format("2006-01-02"),
 		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
 	})
+}
+
+// GetGroupConcurrency returns current request/session slots by API key group.
+// GET /api/v1/admin/dashboard/group-concurrency
+func (h *DashboardHandler) GetGroupConcurrency(c *gin.Context) {
+	snapshot, err := h.apiKeyService.GetDashboardGroupConcurrency(c.Request.Context())
+	if err != nil {
+		response.Error(c, 503, "Group concurrency temporarily unavailable")
+		return
+	}
+	response.Success(c, snapshot)
 }

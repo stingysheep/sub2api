@@ -188,7 +188,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	usageHandler.SetDashboardService(dashboardService)
 	leaderLockCache := repository.NewLeaderLockCache(redisClient)
 	dashboardAggregationService := service.ProvideDashboardAggregationService(dashboardAggregationRepository, timingWheelService, leaderLockCache, db, configConfig)
-	dashboardHandler := admin.NewDashboardHandler(dashboardService, dashboardAggregationService)
+	dashboardHandler := admin.NewDashboardHandler(dashboardService, dashboardAggregationService, apiKeyService)
 	adminGroupRepository := repository.NewAdminGroupRepository(client, db)
 	adminAccountRepository := repository.NewAdminAccountRepository(client, db, schedulerCache)
 	proxyExitInfoProber := repository.NewProxyExitInfoProber(configConfig)

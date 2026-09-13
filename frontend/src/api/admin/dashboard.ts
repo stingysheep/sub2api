@@ -16,6 +16,23 @@ import type {
   UsageRequestType
 } from '@/types'
 
+export interface DashboardGroupConcurrency {
+  group_id: number
+  group_name: string
+  platform: string
+  current_in_use: number
+}
+
+export interface GroupConcurrencySnapshot {
+  groups: DashboardGroupConcurrency[]
+  timestamp: string
+}
+
+export async function getGroupConcurrency(signal?: AbortSignal): Promise<GroupConcurrencySnapshot> {
+  const { data } = await apiClient.get<GroupConcurrencySnapshot>('/admin/dashboard/group-concurrency', { signal, timeout: 6000 })
+  return data
+}
+
 /**
  * Get dashboard statistics
  * @returns Dashboard statistics including users, keys, accounts, and token usage
@@ -357,6 +374,7 @@ export async function getBatchApiKeysUsage(
 }
 
 export const dashboardAPI = {
+  getGroupConcurrency,
   getStats,
   getRealtimeMetrics,
   getUsageTrend,

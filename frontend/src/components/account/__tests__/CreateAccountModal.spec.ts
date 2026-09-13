@@ -133,9 +133,9 @@ const ModelWhitelistSelectorStub = defineComponent({
   >models</button>`,
 })
 
-function mountModal(groups: any[] = []) {
+function mountModal(groups: any[] = [], extraProps: Record<string, unknown> = {}) {
   return mount(CreateAccountModal, {
-    props: { show: true, proxies: [], groups },
+    props: { show: true, proxies: [], groups, ...extraProps },
     global: {
       stubs: {
         BaseDialog: BaseDialogStub,
@@ -605,5 +605,55 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
+  })
+})
+
+
+describe('CreateAccountModal upstream profile prefix', () => {
+  const profiles = [
+    { id: 1, name: 'Provider One', name_prefix: 'one-', base_url: '', sort_order: 0, enabled: true },
+    { id: 2, name: 'Provider Two', name_prefix: 'two-', base_url: '', sort_order: 10, enabled: true },
+  ]
+  const nameInput = (wrapper: ReturnType<typeof mountModal>) => wrapper.get<HTMLInputElement>('[data-tour="account-form-name"]')
+
+  it('applies the default prefix on the first lazy mount', async () => {
+    const wrapper = mountModal([], { upstreamProfiles: profiles, defaultUpstreamProfileId: 1 })
+    await flushPromises()
+    expect(nameInput(wrapper).element.value).toBe('one-')
+    wrapper.unmount()
+  })
+
+  it('applies a default profile that arrives after the dialog opens, preserving the typed suffix', async () => {
+    const wrapper = mountModal([], { upstreamProfiles: [], defaultUpstreamProfileId: 1 })
+    await nameInput(wrapper).setValue('account')
+    await wrapper.setProps({ upstreamProfiles: profiles })
+    await flushPromises()
+    expect(nameInput(wrapper).element.value).toBe('one-account')
+    wrapper.unmount()
+  })
+
+  it('replaces a selected prefix when saved settings update, retaining the suffix', async () => {
+    const wrapper = mountModal([], { upstreamProfiles: profiles, defaultUpstreamProfileId: 1 })
+    await flushPromises()
+    await nameInput(wrapper).setValue('one-account')
+    await wrapper.setProps({ upstreamProfiles: [{ ...profiles[0], name_prefix: 'updated-' }, profiles[1]] })
+    expect(nameInput(wrapper).element.value).toBe('updated-account')
+    await wrapper.setProps({ upstreamProfiles: [{ ...profiles[0], name_prefix: 'updated-' }, profiles[1]] })
+    expect(nameInput(wrapper).element.value).toBe('updated-account')
+    wrapper.unmount()
+  })
+
+  it('switches prefixes and removes only the applied prefix on deselection', async () => {
+    const wrapper = mountModal([], { upstreamProfiles: profiles, defaultUpstreamProfileId: 1 })
+    await flushPromises()
+    await nameInput(wrapper).setValue('one-account')
+    const select = wrapper.get('select')
+    await select.setValue('2')
+    expect(nameInput(wrapper).element.value).toBe('two-account')
+    await select.setValue('')
+    expect(nameInput(wrapper).element.value).toBe('account')
+    await wrapper.setProps({ upstreamProfiles: profiles.map(profile => ({ ...profile })) })
+    expect(nameInput(wrapper).element.value).toBe('account')
+    wrapper.unmount()
   })
 })

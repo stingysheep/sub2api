@@ -4071,6 +4071,7 @@ const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_acco
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const selectedUpstreamProfileID = ref<number | null>(null)
 const appliedUpstreamProfilePrefix = ref('')
+const defaultUpstreamProfileApplied = ref(false)
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
 const batchCreateError = ref('')
@@ -4633,9 +4634,24 @@ const applyUpstreamProfile = (profile: UpstreamProviderProfile | null) => {
   }
 }
 
-watch(selectedUpstreamProfileID, (id) => {
-  applyUpstreamProfile((props.upstreamProfiles || []).find(profile => profile.id === id) || null)
-})
+watch(selectedUpstreamProfile, (profile) => {
+  applyUpstreamProfile(profile)
+}, { deep: true })
+
+// Profiles are loaded asynchronously by the accounts page. Re-apply the default
+// once the list arrives so the prefix is visible on the first create form.
+watch(
+  [() => props.upstreamProfiles, () => props.defaultUpstreamProfileId, () => props.show],
+  ([profiles, defaultID, show]) => {
+    if (!show || defaultUpstreamProfileApplied.value || selectedUpstreamProfileID.value !== null || defaultID == null) return
+    const profile = (profiles || []).find(item => item.id === defaultID && item.enabled)
+    if (profile) {
+      defaultUpstreamProfileApplied.value = true
+      selectedUpstreamProfileID.value = profile.id
+    }
+  },
+  { immediate: true, deep: true }
+)
 
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
@@ -4686,12 +4702,6 @@ watch(
   (newVal) => {
     if (newVal) {
       batchCreateError.value = ''
-      const defaultProfile = (props.upstreamProfiles || []).find(profile =>
-        profile.id === props.defaultUpstreamProfileId && profile.enabled
-      )
-      if (defaultProfile) {
-        selectedUpstreamProfileID.value = defaultProfile.id
-      }
       if (props.defaultPlatform) {
         form.platform = props.defaultPlatform
       }
@@ -5286,6 +5296,7 @@ const resetForm = () => {
   form.expires_at = null
   selectedUpstreamProfileID.value = null
   appliedUpstreamProfilePrefix.value = ''
+  defaultUpstreamProfileApplied.value = false
   accountCategory.value = 'oauth-based'
   addMethod.value = 'oauth'
   accountMode.value = 'payg'
