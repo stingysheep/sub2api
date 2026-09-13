@@ -586,5 +586,6 @@ func TestAccountHandlerSyncUpstreamModels_MetadataEnrichmentFailureReturnsWarnin
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, []string{"x-preview-f-free"}, resp.Data.Models)
-	require.Empty(t, resp.Data.Warnings, "metadata enrichment is optional")
+	require.Len(t, resp.Data.Warnings, 1)
+	require.Equal(t, service.UpstreamModelMetadataIncompleteCode, resp.Data.Warnings[0].Code)
 }

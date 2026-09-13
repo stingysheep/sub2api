@@ -26,7 +26,9 @@ import type {
   UpstreamBillingProbeSettings,
   UpstreamBillingRatesResponse,
   OllamaCloudUsageSettings,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  GrokMediaEligibilityMode,
+  GrokMediaEligibilityState
 } from '@/types'
 
 /**
@@ -261,6 +263,24 @@ export async function removeFromGroup(accountID: number, groupID: number): Promi
   group_id: number
 }> {
   const { data } = await apiClient.delete(`/admin/accounts/${accountID}/groups/${groupID}`)
+  return data
+}
+
+export async function getGrokMediaEligibility(id: number): Promise<GrokMediaEligibilityState> {
+  const { data } = await apiClient.get<GrokMediaEligibilityState>(
+    `/admin/accounts/${id}/grok-media-eligibility`
+  )
+  return data
+}
+
+export async function updateGrokMediaEligibility(
+  id: number,
+  mode: GrokMediaEligibilityMode
+): Promise<GrokMediaEligibilityState> {
+  const { data } = await apiClient.put<GrokMediaEligibilityState>(
+    `/admin/accounts/${id}/grok-media-eligibility`,
+    { mode }
+  )
   return data
 }
 
@@ -1118,6 +1138,8 @@ export const accountsAPI = {
   addToGroup,
   removeFromGroup,
   updateGroupPriority,
+  getGrokMediaEligibility,
+  updateGrokMediaEligibility,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,

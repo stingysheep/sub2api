@@ -17,11 +17,11 @@ import (
 
 type upstreamModelMetadataRepoStub struct {
 	AccountRepository
-	accountID          int64
-	updates            map[string]any
-	credentialUpdates  []map[string]any
-	events             *[]string
-	err                error
+	accountID           int64
+	updates             map[string]any
+	credentialUpdates   []map[string]any
+	events              *[]string
+	err                 error
 	credentialUpdateErr error
 }
 
@@ -863,7 +863,8 @@ func TestSyncUpstreamModelCatalogDoesNotOverwriteSnapshotWhenRegistryFails(t *te
 	require.NoError(t, err)
 	require.Equal(t, []string{"x-preview-f-free"}, catalog.Models)
 	require.Empty(t, catalog.Metadata)
-	require.Empty(t, catalog.Warnings, "model IDs remain usable when optional metadata enrichment fails")
+	require.Len(t, catalog.Warnings, 1)
+	require.Equal(t, UpstreamModelMetadataIncompleteCode, catalog.Warnings[0].Code)
 	require.Nil(t, repo.updates, "a failed metadata enrichment must not erase a previously saved snapshot")
 }
 
@@ -890,7 +891,8 @@ func TestSyncUpstreamModelCatalogDoesNotPersistPartialMetadataWhenRegistryFails(
 	require.NoError(t, err)
 	require.Equal(t, []string{"partially-described-model"}, catalog.Models)
 	require.Equal(t, "Partial Model", catalog.Metadata["partially-described-model"].DisplayName)
-	require.Empty(t, catalog.Warnings, "partial upstream metadata is not a model sync failure")
+	require.Len(t, catalog.Warnings, 1)
+	require.Equal(t, UpstreamModelMetadataIncompleteCode, catalog.Warnings[0].Code)
 	require.Nil(t, repo.updates, "partial metadata must not replace a more complete persisted snapshot")
 }
 

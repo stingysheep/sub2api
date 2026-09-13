@@ -128,7 +128,7 @@ describe('feature route guard', () => {
       return settings
     })
 
-    const { navigation, next } = runGuard({ requiresPayment: true }, '/purchase')
+    const { navigation, next } = runGuard({ requiresPayment: true }, '/payment')
 
     await vi.waitFor(() => expect(appStore.fetchPublicSettings).toHaveBeenCalledTimes(1))
     expect(next).not.toHaveBeenCalled()
@@ -140,7 +140,7 @@ describe('feature route guard', () => {
   })
 
   it.each([
-    ['payment', { requiresPayment: true }, '/purchase'],
+    ['payment', { requiresPayment: true }, '/payment'],
     ['risk control', { requiresRiskControl: true }, '/admin/risk-control'],
   ])('does not treat a failed %s settings load as explicitly disabled', async (_name, meta, path) => {
     authStore.isAdmin = meta.requiresRiskControl === true

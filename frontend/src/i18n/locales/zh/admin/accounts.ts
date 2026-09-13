@@ -351,6 +351,7 @@ export default {
         kimi: 'Kimi',
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
+        minimax: 'MiniMax',
       },
       cnProviders: {
         accountMode: {
@@ -520,7 +521,9 @@ export default {
         grokLastProbe: '探测 {time}',
         grokLastHeadersSeen: '响应头 {time}',
         passiveSampled: '被动采样',
-        activeQuery: '查询'
+        activeQuery: '查询',
+        estimatedTotalCost: '预计总费用 ${cost}',
+        estimatedTotalCostTooltip: '根据当前窗口费用和使用率估算达到 100% 使用率时的总费用'
       },
       openaiQuotaReset: {
         count: '次数',
@@ -600,6 +603,15 @@ export default {
         refreshTokenSuccess: '已成功刷新 {count} 个账号令牌',
         partialSuccess: '操作部分完成：{success} 成功，{failed} 失败'
       },
+      syncAllUpstreamModels: '同步全部账号上游模型',
+      syncAllUpstreamModelsLoading: '同步上游模型中...',
+      syncAllUpstreamModelsDone: '上游模型同步完成：成功 {success} 个，失败 {failed} 个',
+      syncAllUpstreamModelsFailed: '同步全部账号上游模型失败',
+      syncUpstreamModelsReplaced: '上游模型列表已替换',
+      batchApiKeyCreated: '成功创建 {count} 个账号',
+      batchApiKeyFailed: '批量创建账号失败',
+      batchApiKeyHint: '每行填写一个 API Key，可批量创建多个账号。',
+      batchApiKeyPartial: '部分创建成功：成功 {success} 个，失败 {failed} 个',
       bulkEdit: {
         title: '批量编辑账号',
         selectionInfo: '已选择 {count} 个账号。只更新您勾选或填写的字段，未勾选的字段保持不变。',
@@ -618,7 +630,13 @@ export default {
         rateSyncConflict: '无法修改账号倍率：{count} 个目标账号已开启上游倍率同步。',
         longContextShadowHint: '长上下文计费归母账号所有。选中的影子账号仍跟随母账号，筛选全量目标时同样如此。',
         longContextParentRequired: '选中的账号全部是影子账号，请选择母账号修改长上下文计费。',
-        mixedPlatformWarning: '所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果——请确保映射对每个平台都适用。'
+        mixedPlatformWarning: '所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果——请确保映射对每个平台都适用。',
+        accountOrder: '账号顺序',
+        accountOrderDescription: '拖动账号设置调度优先级，提交时保存更改。',
+        dragAccount: '拖动调整账号位置',
+        noAccounts: '此分区暂无账号',
+        orderSaveFailed: '账号顺序保存失败',
+        orderSaved: '账号顺序已保存'
       },
       bulkDeleteTitle: '批量删除账号',
       bulkDeleteConfirm: '确定要删除选中的 {count} 个账号吗？此操作无法撤销。',
@@ -866,6 +884,8 @@ export default {
       modelRestriction: '模型限制（可选）',
       modelWhitelist: '模型白名单',
       modelMapping: '模型映射',
+      fromModel: '请求模型',
+      toModel: '目标模型',
       selectAllowedModels: '选择允许的模型。留空则支持所有模型。',
       mapRequestModels: '将请求模型映射到实际模型。左边是请求的模型，右边是发送到 API 的实际模型。',
       selectedModels: '已选择 {count} 个模型',
@@ -953,6 +973,30 @@ export default {
       grokClientToolCache: {
         title: '客户端工具缓存（可能改变自动工具选择）',
         hint: '仅对已识别为 Free 的 Grok OAuth 账号生效，默认会为 Codex、Trae 等客户端函数工具请求启用上游提示缓存；如不接受自动工具选择行为，可关闭此开关退出。'
+      },
+      grokMediaEligibility: {
+        title: '媒体生成资格',
+        hint: '控制该 Grok OAuth 账号是否可被图片和视频生成请求选中。',
+        auto: '自动判断',
+        enabled: '强制启用',
+        disabled: '强制禁用',
+        current: '当前判定：',
+        eligible: '可用',
+        ineligible: '不可用',
+        loading: '正在读取媒体资格…',
+        loadFailed: '无法读取媒体资格',
+        autoHint: '自动判断只会清除手工覆盖，不会主动触发媒体请求。',
+        forceEnableWarning: '强制启用会绕过自动资格检查，仅应对已确认支持生图/生视频的账号使用。',
+        partialSave: '账号其他配置可能已保存，但媒体资格未更新，请重试。',
+        reasons: {
+          eligible: '已确认付费资格',
+          billing_inconclusive: 'Billing 信息不明确',
+          billing_forbidden: 'Billing 接口拒绝访问',
+          billing_free_tier: 'Free 账号',
+          billing_unobserved: '尚未探测到 Billing',
+          override_enabled: '手工强制启用',
+          override_disabled: '手工强制禁用'
+        }
       },
       autoPauseOnExpired: '过期自动暂停调度',
       autoPauseOnExpiredDesc: '启用后，账号过期将自动暂停调度',
