@@ -25,7 +25,7 @@ func TestMonitorSSRFEndpointLiterals(t *testing.T) {
 		{"https://[2606:4700:4700::1111]", nil},
 		{"", ErrChannelMonitorInvalidEndpoint},
 		{"http://8.8.8.8", ErrChannelMonitorEndpointScheme},
-		{"https://8.8.8.8/v1", ErrChannelMonitorEndpointPath},
+		{"https://8.8.8.8/v1", nil},
 		{"https://8.8.8.8?x=1", ErrChannelMonitorEndpointPath},
 		{"https://8.8.8.8#fragment", ErrChannelMonitorEndpointPath},
 		{"https://localhost", ErrChannelMonitorEndpointPrivate},

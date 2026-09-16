@@ -30,6 +30,9 @@ ASSIGNMENTS = {
     '/root/predeploy_race_checks': ['部署前Windows race验证/分类/Gin测试初始化修正'],
     '/root/race_monitor_fixture': ['部署前monitor并发测试fixture同步修复'],
     '/root/remaining_gap_audit': ['剩余高价值问题独立只读复核'],
+    '/root/v025_conflict_audit': ['官方 v0.2.5 合并冲突与语义风险只读审计'],
+    '/root/v025_backend_conflicts': ['官方 v0.2.5 后端冲突融合与定向验证'],
+    '/root/v025_frontend_conflicts': ['官方 v0.2.5 前端冲突融合与定向验证'],
 }
 
 

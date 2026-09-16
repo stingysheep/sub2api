@@ -207,7 +207,8 @@ const PLATFORM_ORDER: AccountPlatform[] = [
   'kimi',
   'zhipu',
   'deepseek',
-  'minimax'
+  'minimax',
+  'opencode_go'
 ]
 const PLATFORM_LABELS: Record<AccountPlatform, string> = {
   openai: 'OpenAI',
@@ -218,7 +219,8 @@ const PLATFORM_LABELS: Record<AccountPlatform, string> = {
   kimi: 'Kimi',
   zhipu: 'Zhipu GLM',
   deepseek: 'DeepSeek',
-  minimax: 'MiniMax'
+  minimax: 'MiniMax',
+  opencode_go: 'OpenCode'
 }
 
 const props = defineProps<{

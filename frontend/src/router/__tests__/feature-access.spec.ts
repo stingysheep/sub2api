@@ -25,6 +25,7 @@ const appStore = vi.hoisted(() => ({
   cachedPublicSettings: null as null | {
     payment_enabled?: boolean
     risk_control_enabled?: boolean
+    subscription_enabled?: boolean
     custom_menu_items?: []
   },
   fetchPublicSettings: vi.fn(),
@@ -162,6 +163,7 @@ describe('feature route guard', () => {
       { risk_control_enabled: false },
       '/admin/settings',
     ],
+    ['subscription', { requiresSubscription: true }, { subscription_enabled: false }, '/dashboard'],
   ])('redirects when loaded settings explicitly disable %s', async (_name, meta, settings, target) => {
     authStore.isAdmin = meta.requiresRiskControl === true
     appStore.cachedPublicSettings = settings
@@ -173,5 +175,37 @@ describe('feature route guard', () => {
     expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith(target)
+  })
+})
+
+describe('subscription route deployment switch', () => {
+  beforeEach(() => {
+    authStore.isAdmin = false
+    authStore.isSimpleMode = false
+    appStore.publicSettingsLoaded = true
+    appStore.fetchPublicSettings.mockReset()
+  })
+
+  it.each([
+    ['missing key', {}],
+    ['explicit true', { subscription_enabled: true }],
+  ])('keeps /subscriptions disabled when the public flag is %s', async (_name, settings) => {
+    appStore.cachedPublicSettings = settings
+
+    const { navigation, next } = runGuard({ requiresSubscription: true }, '/subscriptions')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('sends admins to the admin dashboard when subscriptions are disabled', async () => {
+    authStore.isAdmin = true
+    appStore.cachedPublicSettings = { subscription_enabled: false }
+
+    const { navigation, next } = runGuard({ requiresSubscription: true }, '/subscriptions')
+    await navigation
+
+    expect(next).toHaveBeenCalledWith('/admin/dashboard')
   })
 })

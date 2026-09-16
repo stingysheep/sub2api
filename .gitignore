@@ -182,6 +182,8 @@ credentials/
 *.sql
 !backend/migrations/236_redeem_code_balance_source.sql
 !backend/migrations/237_correct_user_41_paid_balance_source.sql
+!backend/migrations/238_group_openai_fast_and_reasoning_limit_policy.sql
+!backend/migrations/239_operator_balance_cache_version.sql
 *.dump
 *.backup
 *.bak-*
