@@ -1188,7 +1188,7 @@ func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeR
 	if err != nil {
 		return err
 	}
-	if err := c.sweepLegacyAPIKeySlotsOnce(ctx, activeRequestPrefix, now); err != nil {
+	if err := c.sweepAPIKeySlots(ctx, activeRequestPrefix, now); err != nil {
 		return err
 	}
 
@@ -1215,16 +1215,11 @@ func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeR
 	return c.cleanupStaleAPIKeySlots(ctx, apiKeyMembers, activeRequestPrefix, now)
 }
 
-// sweepLegacyAPIKeySlotsOnce migrates API key slot keys created before the active index existed.
-// It scans only the API key namespace once, removes dead-process members and indexes survivors.
-func (c *concurrencyCache) sweepLegacyAPIKeySlotsOnce(ctx context.Context, activeRequestPrefix string, now int64) error {
-	exists, err := c.rdb.Exists(ctx, legacyAPIKeySweepMarkerKey).Result()
-	if err != nil {
-		return fmt.Errorf("check legacy API key sweep marker: %w", err)
-	}
-	if exists > 0 {
-		return nil
-	}
+// sweepAPIKeySlots reconciles every API key slot at startup.
+// API key slots are statistics only. A previous binary can create slots without
+// updating the active index, so the index alone cannot be trusted across rollbacks.
+// Limit SCAN to the API key namespace, remove dead-process members and index survivors.
+func (c *concurrencyCache) sweepAPIKeySlots(ctx context.Context, activeRequestPrefix string, now int64) error {
 	var cursor uint64
 	for {
 		keys, next, err := c.rdb.Scan(ctx, cursor, apiKeySlotKeyPrefix+"*", 200).Result()
@@ -1248,9 +1243,6 @@ func (c *concurrencyCache) sweepLegacyAPIKeySlotsOnce(ctx context.Context, activ
 		if cursor == 0 {
 			break
 		}
-	}
-	if err := c.rdb.Set(ctx, legacyAPIKeySweepMarkerKey, "1", 0).Err(); err != nil {
-		return fmt.Errorf("set legacy API key sweep marker: %w", err)
 	}
 	return nil
 }
