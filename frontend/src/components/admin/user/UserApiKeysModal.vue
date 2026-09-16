@@ -153,7 +153,7 @@ watch(() => props.show, (v) => {
   }
 }, { immediate: true })
 
-const load = async () => {
+async function load() {
   if (!props.user) return
   loading.value = true
   groupButtonRefs.value.clear()
@@ -167,7 +167,7 @@ const load = async () => {
   }
 }
 
-const loadGroups = async () => {
+async function loadGroups() {
   try {
     const groups = await adminAPI.groups.getAll()
     allGroups.value = groups
@@ -197,7 +197,7 @@ const openGroupSelector = (key: ApiKey) => {
   }
 }
 
-const closeGroupSelector = () => {
+function closeGroupSelector() {
   groupSelectorKeyId.value = null
   dropdownPosition.value = null
 }

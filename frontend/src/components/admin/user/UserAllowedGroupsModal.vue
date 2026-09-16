@@ -248,7 +248,7 @@ watch(
   { immediate: true }
 )
 
-const load = async () => {
+async function load() {
   loading.value = true
   try {
     const res = await adminAPI.groups.list(1, 1000)

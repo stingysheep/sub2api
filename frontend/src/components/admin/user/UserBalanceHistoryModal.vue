@@ -220,7 +220,7 @@ watch(() => props.show, (v) => {
   }
 }, { immediate: true })
 
-const loadHistory = async (page: number) => {
+async function loadHistory(page: number) {
   if (!props.user) return
   loading.value = true
   currentPage.value = page
