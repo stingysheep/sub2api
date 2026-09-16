@@ -115,7 +115,7 @@ func TestOpenAIWSSessionPreemptContextEligibilityAndLocalCancellation(t *testing
 }
 
 func TestOpenAIWSIngressSessionPreemptionSurvivesNestedForwardCleanup(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	groupID := int64(7)
 	newContext := func() *gin.Context {
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -153,7 +153,7 @@ func TestOpenAIWSIngressSessionPreemptionSurvivesNestedForwardCleanup(t *testing
 }
 
 func TestOpenAIWSIngressSessionPreemptionRespectsResolvedMode(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	groupID := int64(7)
 	newContext := func() *gin.Context {
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -225,7 +225,7 @@ func TestOpenAIWSSessionPreemptRemoteClaimAndStaleReleaseAreAtomic(t *testing.T)
 }
 
 func TestOpenAIWSHTTPBridgeSessionPreemptionEligibility(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	tests := []struct {
 		name          string
 		routerEnabled bool

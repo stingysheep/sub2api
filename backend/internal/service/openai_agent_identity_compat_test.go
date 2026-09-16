@@ -17,7 +17,7 @@ import (
 )
 
 func TestAccountTestServiceOpenAICompactAgentIdentityUsesFreshAssertion(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	key, privateKey := newTestAgentIdentityKey(t)
 	account := Account{
 		ID:          21,
@@ -56,7 +56,7 @@ func TestAccountTestServiceOpenAICompactAgentIdentityUsesFreshAssertion(t *testi
 }
 
 func TestAccountTestServiceOpenAICompactAgentIdentityRecoversInvalidTaskOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	key, privateKey := newTestAgentIdentityKey(t)
 	account := &Account{
 		ID:          22,
@@ -104,7 +104,7 @@ func TestAccountTestServiceOpenAICompactAgentIdentityRecoversInvalidTaskOnce(t *
 }
 
 func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	key, privateKey := newTestAgentIdentityKey(t)
 	account := &Account{
 		ID:       24,
@@ -290,7 +290,7 @@ func TestOpenAIWSConnPoolHeadersFactoryRunsAtDialAndStalePrewarmIsDiscarded(t *t
 }
 
 func TestOpenAIAgentIdentityTaskInvalidRetriesExactlyOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	key, privateKey := newTestAgentIdentityKey(t)
 	account := &Account{
 		ID:          23,
@@ -368,7 +368,7 @@ func TestOpenAIAgentIdentityTaskInvalidRetriesExactlyOnce(t *testing.T) {
 }
 
 func TestOpenAIAgentIdentityCompatRoutesRecoverInvalidTaskOnce(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	tests := []struct {
 		name string
 		path string

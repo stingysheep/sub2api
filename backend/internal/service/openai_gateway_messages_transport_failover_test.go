@@ -15,7 +15,7 @@ import (
 )
 
 func TestForwardAsAnthropic_TransportError_ReturnsFailoverError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	body := []byte(`{"model":"gpt-5.4","max_tokens":32,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
 	rec := httptest.NewRecorder()
@@ -41,7 +41,7 @@ func TestForwardAsAnthropic_TransportError_ReturnsFailoverError(t *testing.T) {
 }
 
 func TestForwardAsAnthropic_TransportError_DoesNotWriteResponse(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	body := []byte(`{"model":"gpt-5.4","max_tokens":32,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
 	rec := httptest.NewRecorder()
@@ -65,7 +65,7 @@ func TestForwardAsAnthropic_TransportError_DoesNotWriteResponse(t *testing.T) {
 }
 
 func TestForwardAsAnthropic_TransportError_ClientCanceled_NoFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	body := []byte(`{"model":"gpt-5.4","max_tokens":32,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
 	rec := httptest.NewRecorder()

@@ -23,6 +23,23 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      migration-fixture:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: migration_test
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 127.0.0.1:25433:5432
+        options: >-
+          --health-cmd "pg_isready -U migration_test -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      SUB2API_MIGRATIONS_LOCAL_TEST: '1'
+      BILLING_TEST_POSTGRES_LOCAL: '127.0.0.1:25433'
+      SUB2API_BACKLOG_LOCAL_TEST: '1'
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -43,6 +60,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - name: Setup pnpm
@@ -58,8 +76,17 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
-      - name: Frontend typecheck and critical vitest
+      - name: Frontend lint, typecheck and full vitest
         run: make test-frontend
+      - name: Install isolated browser test runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/operator-browser" --ignore-scripts --no-audit --no-fund playwright-core@1.60.0
+          node "$RUNNER_TEMP/operator-browser/node_modules/playwright-core/cli.js" install --with-deps chromium
+      - name: Operator browser tests with loopback fixtures
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_CORE_PATH: ${{ runner.temp }}/operator-browser/node_modules/playwright-core
+        run: node scripts/operator-browser-smoke.mjs
 
   golangci-lint:
     runs-on: ubuntu-latest

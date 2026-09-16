@@ -288,6 +288,16 @@ func attachSelectionProfitGate(ctx context.Context, sel *AccountSelectionResult)
 // （ProfitControlVetoLatest / GatewayProfitControlVetoLatest）与准入后粘性
 // 绑定，否则这两步会因为看不到调度栈内安装的门而退化为空操作。
 func ContextWithSelectionProfitGate(ctx context.Context, sel *AccountSelectionResult) context.Context {
+	// Also replay the OpenAI slot requirements captured by the scheduler.
+	// Reset admission metadata even for a result without it, so prior selections
+	// cannot lend their group, capabilities or quarantine exception to this one.
+	var admission *openAIAccountSlotAdmission
+	if sel != nil {
+		admission = sel.slotAdmission
+	}
+	if previous, _ := ctx.Value(openAIAccountSlotAdmissionKey{}).(*openAIAccountSlotAdmission); previous != admission {
+		ctx = context.WithValue(ctx, openAIAccountSlotAdmissionKey{}, admission)
+	}
 	if sel == nil || sel.profitGate == nil {
 		return ctx
 	}

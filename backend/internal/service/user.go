@@ -60,9 +60,12 @@ type User struct {
 	RPMLimit int
 
 	// UserGroupRPMOverride 来自 auth cache snapshot 的 (user, group) RPM 覆盖值。
-	// nil = 该 API Key 对应的 (user, group) 无 override；非 nil 时 checkRPM 直接使用，
-	// 避免每请求查 DB。字段不持久化到数据库。
+	// A non-nil value is also trusted for legacy snapshot compatibility.
 	UserGroupRPMOverride *int
+	// Loaded + nil means known absence for GroupID; false + nil requires a lookup.
+	// Both fields are request metadata, not persisted to the database.
+	UserGroupRPMOverrideLoaded  bool
+	UserGroupRPMOverrideGroupID int64
 
 	APIKeys       []APIKey
 	Subscriptions []UserSubscription
@@ -108,3 +111,5 @@ func (u *User) SetPassword(password string) error {
 func (u *User) CheckPassword(password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) == nil
 }
+
+func (u *User) IsOperator() bool { return u.Role == RoleOperator }

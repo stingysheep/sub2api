@@ -14,7 +14,7 @@ import (
 )
 
 func TestIsChannelMonitorProbe(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	for _, tc := range []struct {
 		name   string
 		header string
@@ -44,7 +44,7 @@ func TestMonitorFailoverMaxSwitchesExceedsOrdinaryCap(t *testing.T) {
 }
 
 func TestNewChannelMonitorAttemptTimeoutErrorIsFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	account := &Account{ID: 42, Name: "monitor-account", Platform: PlatformOpenAI}

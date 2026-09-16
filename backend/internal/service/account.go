@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -82,6 +83,18 @@ type Account struct {
 	headerOverrideCacheRawPtr         uintptr
 	headerOverrideCacheRawLen         int
 	headerOverrideCacheRawSig         uint64
+}
+
+const accountHotPathCacheStripeCount = 256
+
+var accountHotPathCacheLocks [accountHotPathCacheStripeCount]sync.Mutex
+
+// accountHotPathCacheLock serializes lazy cache initialization for one Account
+// without embedding a mutex in Account, which is copied by value in several
+// repository and test paths. Cache values are immutable after publication.
+func accountHotPathCacheLock(a *Account) *sync.Mutex {
+	index := (reflect.ValueOf(a).Pointer() >> 3) % uintptr(len(accountHotPathCacheLocks))
+	return &accountHotPathCacheLocks[index]
 }
 
 type OpenAIEndpointCapability string
@@ -587,6 +600,10 @@ func stringMappingFromRaw(raw any) map[string]string {
 }
 
 func (a *Account) GetModelMapping() map[string]string {
+	cacheLock := accountHotPathCacheLock(a)
+	cacheLock.Lock()
+	defer cacheLock.Unlock()
+
 	runtimeVersion := xai.RuntimeModelMappingVersion()
 	credentialsPtr := mapPtr(a.Credentials)
 	rawMapping, _ := a.Credentials["model_mapping"].(map[string]any)

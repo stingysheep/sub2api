@@ -83,6 +83,7 @@ func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
 
 func provideCleanup(
 	entClient *ent.Client,
+	usageBillingRepo service.UsageBillingRepository,
 	rdb *redis.Client,
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAggregation *service.OpsAggregationService,
@@ -383,6 +384,12 @@ func provideCleanup(
 		}
 
 		infraSteps := []cleanupStep{
+			{"UsageBillingRecovery", func() error {
+				if recovery, ok := usageBillingRepo.(interface{ Close() }); ok {
+					recovery.Close()
+				}
+				return nil
+			}},
 			{"Redis", func() error {
 				if rdb == nil {
 					return nil

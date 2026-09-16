@@ -9,7 +9,7 @@ import (
 )
 
 func TestMarkAndGetOpsCyberPolicy(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 
@@ -29,7 +29,7 @@ func TestMarkAndGetOpsCyberPolicy(t *testing.T) {
 }
 
 func TestMarkOpsCyberPolicyFirstWins(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	MarkOpsCyberPolicy(c, CyberPolicyMark{Code: "cyber_policy", Message: "first"})
@@ -45,7 +45,7 @@ func TestMarkOpsCyberPolicyNilContext(t *testing.T) {
 // TestClearOpsCyberPolicy_AllowsRemark verifies F1: after Clear, Get returns nil
 // and a subsequent Mark takes effect (per-turn lifecycle in WS connections).
 func TestClearOpsCyberPolicy_AllowsRemark(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 
 	MarkOpsCyberPolicy(c, CyberPolicyMark{Message: "first", UpstreamStatus: 200})

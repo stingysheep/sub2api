@@ -29,7 +29,7 @@ func countingOpenAIImageIntentClassifier(calls *atomic.Int64) openAIImageIntentC
 }
 
 func TestResolveOpenAIImageIntentHintCachesTrueAndFalse(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	tests := []struct {
 		name string
 		body []byte
@@ -56,7 +56,7 @@ func TestResolveOpenAIImageIntentHintCachesTrueAndFalse(t *testing.T) {
 }
 
 func TestResolveOpenAIImageIntentHintUsesHandlerSeed(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	for _, seeded := range []bool{false, true} {
 		c := newOpenAIImageIntentHintTestContext(OpenAIClientTransportHTTP)
 		SetOpenAIImageIntentHint(c, seeded)
@@ -70,7 +70,7 @@ func TestResolveOpenAIImageIntentHintUsesHandlerSeed(t *testing.T) {
 }
 
 func TestResolveOpenAIPassthroughImageIntentReusesCanonicalAcrossFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	c := newOpenAIImageIntentHintTestContext(OpenAIClientTransportHTTP)
 	body := []byte(`{"model":"gpt-5.4","input":"write code"}`)
 	var calls atomic.Int64
@@ -83,7 +83,7 @@ func TestResolveOpenAIPassthroughImageIntentReusesCanonicalAcrossFailover(t *tes
 }
 
 func TestResolveOpenAIPassthroughImageIntentKeepsCompactMappingAttemptLocal(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	t.Run("text to image", func(t *testing.T) {
 		c := newOpenAIImageIntentHintTestContext(OpenAIClientTransportHTTP)
 		body := []byte(`{"model":"draw-alias","input":"draw"}`)
@@ -121,7 +121,7 @@ func TestResolveOpenAIPassthroughImageIntentKeepsCompactMappingAttemptLocal(t *t
 }
 
 func TestResolveOpenAIPassthroughImageIntentInvalidationDoesNotPolluteCanonical(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	c := newOpenAIImageIntentHintTestContext(OpenAIClientTransportHTTP)
 	canonicalBody := []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation"}]}`)
 	strippedBody := []byte(`{"model":"gpt-5.4","tools":[]}`)
@@ -139,7 +139,7 @@ func TestResolveOpenAIPassthroughImageIntentInvalidationDoesNotPolluteCanonical(
 }
 
 func TestResolveOpenAIPassthroughImageIntentMappedBodyStartsUnknownThenSeedsCanonical(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	c := newOpenAIImageIntentHintTestContext(OpenAIClientTransportHTTP)
 	canonicalBody := []byte(`{"model":"gpt-image-2","input":"draw"}`)
 	strippedAttemptBody := []byte(`{"model":"gpt-5.4","input":"draw"}`)
@@ -156,7 +156,7 @@ func TestResolveOpenAIPassthroughImageIntentMappedBodyStartsUnknownThenSeedsCano
 }
 
 func TestResolveOpenAIPassthroughImageIntentReusesAcrossInvariantMutations(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	tests := []struct {
 		name          string
 		canonicalBody []byte
@@ -191,7 +191,7 @@ func TestResolveOpenAIPassthroughImageIntentReusesAcrossInvariantMutations(t *te
 }
 
 func TestOpenAIGatewayServicePassthroughCompactImageIntentIsAttemptLocal(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	tests := []struct {
 		name           string
 		canonicalModel string
@@ -255,7 +255,7 @@ func TestOpenAIGatewayServicePassthroughCompactImageIntentIsAttemptLocal(t *test
 }
 
 func TestResolveOpenAIImageIntentHintExcludesWebSocketAndUnknownTransport(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	for _, transport := range []OpenAIClientTransport{OpenAIClientTransportWS, OpenAIClientTransportUnknown} {
 		c := newOpenAIImageIntentHintTestContext(transport)
 		var calls atomic.Int64
@@ -271,7 +271,7 @@ func TestResolveOpenAIImageIntentHintExcludesWebSocketAndUnknownTransport(t *tes
 }
 
 func TestResolveOpenAIImageIntentHintConcurrentRequestsAreIsolated(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	const requests = 32
 	var calls atomic.Int64
 	classify := countingOpenAIImageIntentClassifier(&calls)

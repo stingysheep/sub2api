@@ -16,16 +16,29 @@ import type {
   UsageRequestType
 } from '@/types'
 
+export interface DashboardGroupConcurrencyUser {
+  user_id: number
+  user_label: string
+  current_in_use: number
+}
+
 export interface DashboardGroupConcurrency {
   group_id: number
   group_name: string
   platform: string
   current_in_use: number
+  active_users: number
+  users: DashboardGroupConcurrencyUser[]
 }
 
 export interface GroupConcurrencySnapshot {
   groups: DashboardGroupConcurrency[]
+  users: DashboardGroupConcurrencyUser[]
   timestamp: string
+  current_concurrency: number
+  active_users: number
+  group_attributed_slots: number
+  unattributed_concurrency: number
 }
 
 export async function getGroupConcurrency(signal?: AbortSignal): Promise<GroupConcurrencySnapshot> {

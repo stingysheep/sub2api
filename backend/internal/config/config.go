@@ -898,7 +898,12 @@ func normalizeProxyProbeURLs(targets []ProbeURLConfig) ([]ProbeURLConfig, error)
 }
 
 type BillingConfig struct {
-	CircuitBreaker CircuitBreakerConfig `mapstructure:"circuit_breaker"`
+	RecoveryJournalPath string `mapstructure:"recovery_journal_path"`
+	RecoveryMaxEntries  int    `mapstructure:"recovery_max_entries"`
+	// RecoveryMaxBytes limits logical SQLite database pages; WAL/SHM files
+	// require additional disk space and are not covered by this limit.
+	RecoveryMaxBytes int64                `mapstructure:"recovery_max_bytes"`
+	CircuitBreaker   CircuitBreakerConfig `mapstructure:"circuit_breaker"`
 	// MinimumBalanceReserve is the conservative preflight floor for balance billing.
 	// Requests in balance mode are rejected when the cached balance is below this
 	// amount, even if it is still positive. Set to 0 to keep the legacy balance > 0 gate.
@@ -2075,6 +2080,9 @@ func setDefaults() {
 	viper.SetDefault("billing.circuit_breaker.reset_timeout_seconds", 30)
 	viper.SetDefault("billing.circuit_breaker.half_open_requests", 3)
 	viper.SetDefault("billing.minimum_balance_reserve", 0.000001)
+	viper.SetDefault("billing.recovery_journal_path", "./data/usage-billing-recovery.sqlite")
+	viper.SetDefault("billing.recovery_max_entries", 10000)
+	viper.SetDefault("billing.recovery_max_bytes", 64*1024*1024)
 	viper.SetDefault("billing.user_platform_quota_cache_ttl_seconds", 86400)
 	viper.SetDefault("billing.user_platform_quota_sentinel_ttl_seconds", 3600)
 
@@ -3045,6 +3053,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Billing.MinimumBalanceReserve < 0 {
 		return fmt.Errorf("billing.minimum_balance_reserve must be non-negative")
+	}
+	if c.Billing.RecoveryMaxEntries < 0 || c.Billing.RecoveryMaxBytes < 0 || (c.Billing.RecoveryMaxBytes > 0 && c.Billing.RecoveryMaxBytes < 32768) {
+		return fmt.Errorf("billing recovery capacity must be positive and at least 32768 bytes")
 	}
 	if c.Database.MaxOpenConns <= 0 {
 		return fmt.Errorf("database.max_open_conns must be positive")

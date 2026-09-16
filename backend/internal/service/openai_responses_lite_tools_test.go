@@ -399,7 +399,7 @@ func TestApplyCodexOAuthTransform_PreservesLiteNamespaceToolChoice(t *testing.T)
 }
 
 func TestOpenAIGatewayServiceForward_NormalizesResponsesLiteToolsForOAuth(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	for _, passthrough := range []bool{false, true} {
 		name := "managed"
@@ -499,7 +499,7 @@ func TestOpenAIGatewayServiceForward_NormalizesResponsesLiteToolsForOAuth(t *tes
 }
 
 func TestOpenAIGatewayServiceForward_PinsParallelToolCallsForToollessResponsesLite(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	accountCases := []struct {
 		name        string
@@ -566,7 +566,7 @@ func TestOpenAIGatewayServiceForward_PinsParallelToolCallsForToollessResponsesLi
 }
 
 func TestOpenAIGatewayServiceForward_DisablesParallelToolCallsForResponsesLiteAPIKey(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	for _, passthrough := range []bool{false, true} {
 		name := "managed"

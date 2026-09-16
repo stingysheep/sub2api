@@ -123,7 +123,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	}
 
 	if clientStream {
-		return s.streamChatCompletionsAsResponses(c, resp, originalModel, customTools, functionTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+		return s.streamChatCompletionsAsResponses(c, resp, account, originalModel, customTools, functionTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}
 	return s.bufferChatCompletionsAsResponses(c, resp, originalModel, customTools, functionTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 }
@@ -173,6 +173,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsResponses(
 func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 	c *gin.Context,
 	resp *http.Response,
+	account *Account,
 	originalModel string,
 	customTools map[string]bool,
 	functionTools map[string]bool,
@@ -227,6 +228,9 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 	})
 
 	if scan.Err != nil {
+		if !clientDisconnected && !openAIStreamClientOutputStarted(c, false) && shouldClassifyOpenAIUpstreamStreamReadError(scan.Err, c.Request.Context()) {
+			return nil, newOpenAIRawStreamTruncatedFailoverError(c, account, requestID, scan.Err)
+		}
 		return &OpenAIForwardResult{
 			RequestID:                   requestID,
 			UpstreamHeaders:             resp.Header,
@@ -296,7 +300,13 @@ func chatChunkStartsResponsesOutput(chunk *apicompat.ChatCompletionsChunk) bool 
 		return false
 	}
 	for _, choice := range chunk.Choices {
-		if choice.Delta.Content != nil || choice.Delta.ReasoningContent != nil || len(choice.Delta.ToolCalls) > 0 {
+		// Match ChatDelta.reasoningText: an explicit reasoning_content wins, even when empty.
+		reasoning := choice.Delta.ReasoningContent
+		if reasoning == nil {
+			reasoning = choice.Delta.Reasoning
+		}
+		if (choice.Delta.Content != nil && *choice.Delta.Content != "") ||
+			(reasoning != nil && *reasoning != "") || len(choice.Delta.ToolCalls) > 0 {
 			return true
 		}
 	}

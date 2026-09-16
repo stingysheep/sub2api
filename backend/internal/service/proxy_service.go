@@ -177,16 +177,7 @@ func (s *ProxyService) Delete(ctx context.Context, id int64) error {
 
 // TestConnection 测试代理连接（需要实现具体测试逻辑）
 func (s *ProxyService) TestConnection(ctx context.Context, id int64) error {
-	proxy, err := s.proxyRepo.GetByID(ctx, id)
-	if err != nil {
-		return fmt.Errorf("get proxy: %w", err)
-	}
-
-	// TODO: 实现代理连接测试逻辑
-	// 可以尝试通过代理发送测试请求
-	_ = proxy
-
-	return nil
+	return fmt.Errorf("test proxy connection is unsupported; use a protocol-aware probe")
 }
 
 // GetURL 获取代理URL

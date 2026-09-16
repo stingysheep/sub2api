@@ -14,13 +14,15 @@ func TestAPIKeyRepositoryGroupConcurrency_ProjectionAndBounds(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 	repo := &apiKeyRepository{sql: db}
-	mock.ExpectQuery(`SELECT k.id, COALESCE\(g.id, 0\), COALESCE\(g.name, ''\), COALESCE\(g.platform, ''\).*FROM api_keys k LEFT JOIN groups g ON g.id = k.group_id AND g.deleted_at IS NULL.*WHERE k.deleted_at IS NULL AND k.id > \$1 ORDER BY k.id ASC LIMIT \$2`).
+	mock.ExpectQuery(`SELECT k.id, u.id,.*FROM api_keys k.*JOIN users u ON u.id = k.user_id AND u.deleted_at IS NULL AND u.role = 'user'.*LEFT JOIN groups g ON g.id = k.group_id AND g.deleted_at IS NULL.*WHERE k.deleted_at IS NULL AND k.id > \$1 ORDER BY k.id ASC LIMIT \$2`).
 		WithArgs(int64(500), 500).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id", "name", "platform"}).AddRow(501, 10, "A", "openai").AddRow(502, 0, "", ""))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "user_label", "group_id", "name", "platform"}).AddRow(501, 1001, "alice@example.com", 10, "A", "openai").AddRow(502, 1002, "bob@example.com", 0, "", ""))
 	keys, err := repo.ListGroupConcurrencyKeys(context.Background(), 500, 5000)
 	require.NoError(t, err)
 	require.Len(t, keys, 2)
 	require.Equal(t, int64(501), keys[0].APIKeyID)
+	require.Equal(t, int64(1001), keys[0].UserID)
+	require.Equal(t, "alice@example.com", keys[0].UserLabel)
 	require.Equal(t, int64(0), keys[1].GroupID)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -10,7 +10,7 @@ import (
 )
 
 func TestResolveOpenAIWSSessionHeadersPrefersCodexHyphenHeader(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
@@ -24,7 +24,7 @@ func TestResolveOpenAIWSSessionHeadersPrefersCodexHyphenHeader(t *testing.T) {
 }
 
 func TestResolveOpenAIWSSessionHeadersFallsBackToLegacyHeader(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)

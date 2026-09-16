@@ -86,6 +86,14 @@ func isPrivateIP(ip net.IP) bool {
 //
 // hostname 是 IP 字面量时也走同一路径。
 func isPrivateOrLoopbackHost(ctx context.Context, hostname string) (bool, error) {
+	return isPrivateOrLoopbackHostWithResolver(ctx, hostname, net.DefaultResolver)
+}
+
+type monitorIPAddrResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
+func isPrivateOrLoopbackHostWithResolver(ctx context.Context, hostname string, resolver monitorIPAddrResolver) (bool, error) {
 	if isBlockedHostname(hostname) {
 		return true, nil
 	}
@@ -93,7 +101,6 @@ func isPrivateOrLoopbackHost(ctx context.Context, hostname string) (bool, error)
 	if ip := net.ParseIP(hostname); ip != nil {
 		return isPrivateIP(ip), nil
 	}
-	resolver := net.DefaultResolver
 	addrs, err := resolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
 		return false, err
@@ -112,6 +119,10 @@ func isPrivateOrLoopbackHost(ctx context.Context, hostname string) (bool, error)
 // safeDialContext 在真实 dial 前再次校验目标 IP，防止 DNS rebinding。
 // 解析 hostname 后逐个 IP 尝试连接，命中私网即拒绝（即便 validateEndpoint 时返回的是公网 IP）。
 func safeDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return safeDialContextWithDependencies(ctx, network, address, net.DefaultResolver, monitorDialer.DialContext)
+}
+
+func safeDialContextWithDependencies(ctx context.Context, network, address string, resolver monitorIPAddrResolver, dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, err
@@ -121,25 +132,28 @@ func safeDialContext(ctx context.Context, network, address string) (net.Conn, er
 		if isPrivateIP(ip) {
 			return nil, &net.AddrError{Err: "blocked by SSRF policy", Addr: address}
 		}
-		return monitorDialer.DialContext(ctx, network, address)
+		return dial(ctx, network, address)
 	}
 	if isBlockedHostname(host) {
 		return nil, &net.AddrError{Err: "blocked by SSRF policy", Addr: address}
 	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	addrs, err := resolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, err
 	}
 	if len(addrs) == 0 {
 		return nil, &net.AddrError{Err: "no addresses for host", Addr: host}
 	}
-	var lastErr error
+	// Match creation-time policy: a mixed public/private answer is unsafe,
+	// regardless of address order. Validate every address before opening a socket.
 	for _, a := range addrs {
 		if isPrivateIP(a.IP) {
-			lastErr = &net.AddrError{Err: "blocked by SSRF policy", Addr: a.IP.String()}
-			continue
+			return nil, &net.AddrError{Err: "blocked by SSRF policy", Addr: address}
 		}
-		conn, err := monitorDialer.DialContext(ctx, network, net.JoinHostPort(a.IP.String(), port))
+	}
+	var lastErr error
+	for _, a := range addrs {
+		conn, err := dial(ctx, network, net.JoinHostPort(a.IP.String(), port))
 		if err == nil {
 			return conn, nil
 		}

@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
@@ -291,6 +293,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	clientDisconnected := false
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)
+	pendingBytes := 0
+	var stagingErr error
+	nonSSEOutput := false
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
 	var terminal openAIRawStreamTerminalState
 
@@ -298,7 +303,12 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		if clientDisconnected {
 			return
 		}
-		if !clientOutputStarted && !refusalDetector.ShouldReleaseClientOutput() {
+		if !clientOutputStarted && ((!nonSSEOutput && firstTokenMs == nil && !terminal.Terminated()) || !refusalDetector.ShouldReleaseClientOutput()) {
+			pendingBytes += len(line) + 1
+			if pendingBytes > openAIFirstOutputStageMaxBytes {
+				stagingErr = errOpenAIFirstOutputStageLimit
+				return
+			}
 			pendingLines = append(pendingLines, line)
 			return
 		}
@@ -332,22 +342,34 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
 			terminal.ObserveDataLine(trimmedPayload)
+			if terminal.Terminated() {
+				observeOpenAICompatOutput(resp.Body)
+			}
 			if trimmedPayload != "[DONE]" {
 				observer.ObserveOpenAI([]byte(payload), strings.TrimSpace(gjson.Get(payload, "type").String()))
 				usageOnlyChunk := isOpenAIChatUsageOnlyStreamChunk(payload)
 				if u := extractCCStreamUsage(payload); u != nil {
 					usage = *u
 				}
-				if firstTokenMs == nil && !usageOnlyChunk {
+				var chunk apicompat.ChatCompletionsChunk
+				if firstTokenMs == nil && !usageOnlyChunk && json.Unmarshal([]byte(payload), &chunk) == nil && chatChunkStartsResponsesOutput(&chunk) {
 					elapsed := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &elapsed
+					observeOpenAICompatOutput(resp.Body)
 				}
 			}
+		} else if gjson.Valid(line) && gjson.Get(line, "choices").IsArray() {
+			// Preserve compatible upstreams that return JSON despite stream=true.
+			nonSSEOutput = true
+			observeOpenAICompatOutput(resp.Body)
 		}
 		line = applyOllamaCloudRawChatCompletionsSSELine(account, line)
 		line = stripEmptyChatToolCallIdentityFromSSELine(line)
 
 		writeLine(line)
+		if stagingErr != nil {
+			break
+		}
 		if line == "" {
 			if !clientDisconnected && clientOutputStarted {
 				c.Writer.Flush()
@@ -379,6 +401,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	}
 
 	scanErr := scanner.Err()
+	if stagingErr != nil {
+		scanErr = stagingErr
+	}
 	if scanErr != nil && !errors.Is(scanErr, context.Canceled) && !errors.Is(scanErr, context.DeadlineExceeded) {
 		logger.L().Warn("openai chat_completions raw: stream read error",
 			zap.Error(scanErr),

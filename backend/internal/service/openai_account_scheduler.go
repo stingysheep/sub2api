@@ -90,6 +90,8 @@ type OpenAIAccountScheduleRequest struct {
 	// and compact_model_mapping; native remote compaction v2 leaves it false.
 	RequireCompact bool
 	ExcludedIDs    map[int64]struct{}
+	// RuntimeCooldownRecoveryAttempt prevents repeated fail-open recovery in one selection.
+	RuntimeCooldownRecoveryAttempt bool
 }
 
 type OpenAIAccountScheduleDecision struct {
@@ -1488,6 +1490,16 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		})
 	}
 	if len(filtered) == 0 {
+		if !req.RuntimeCooldownRecoveryAttempt &&
+			NormalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI &&
+			filterStats.reasons["runtime_blocked"] == len(accounts) && len(accounts) > 0 {
+			for i := range accounts {
+				model := canonicalOpenAIAccountSchedulingModel(&accounts[i], req.RequestedModel)
+				s.service.clearOpenAIAccountModelTransientState(accounts[i].ID, model)
+			}
+			req.RuntimeCooldownRecoveryAttempt = true
+			return s.selectByLoadBalance(ctx, req)
+		}
 		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false, filterStats.summary(""))
 	}
 
@@ -2239,9 +2251,20 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	platform string,
 	previousResponseCanMove bool,
 	useUpstreamTokenCost bool,
-) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+) (result *AccountSelectionResult, resultDecision OpenAIAccountScheduleDecision, resultErr error) {
 	ctx = s.withOpenAIQuotaAutoPauseContext(ctx)
 	ctx = s.withOpenAIGroupPrivacyRequirement(ctx, groupID)
+	// Every successful path (legacy, sticky, advanced and quarantine fallback)
+	// must replay the constraints actually used for this selection at slot admission.
+	defer func() {
+		if resultErr == nil {
+			result = attachOpenAIAccountSlotAdmission(ctx, result, OpenAIAccountSlotRequirements{
+				GroupID: groupID, Platform: platform, RequestedModel: requestedModel,
+				RequiredCapability: requiredCapability, RequiredImageCapability: requiredImageCapability,
+				RequireCompact: requireCompact,
+			}, s.openAIGroupRequiresPrivacySet(ctx, groupID))
+		}
+	}()
 	// 分组利润控制：唯一文本调度入口的防御性装门。handler 文本
 	// 入口已在请求开始经 WithOpenAIRequestPricingContext 装门并固定 pricingAt，
 	// 此处对同分组门直接复用（failover 重入阈值稳定），仅为不经 handler 装配的

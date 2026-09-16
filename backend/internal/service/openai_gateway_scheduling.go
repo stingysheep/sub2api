@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -879,6 +880,20 @@ func resolveOpenAIErrorSchedulingModel(billingModel, upstreamModel string) strin
 }
 
 func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, stickyAccountID int64, requiredCapability OpenAIEndpointCapability, preferLowUpstreamRate bool) (*Account, error) {
+	selection, err := s.selectAccountForModelWithExclusionsOnce(ctx, groupID, platform, sessionHash, requestedModel, excludedIDs, requireCompact, stickyAccountID, requiredCapability, preferLowUpstreamRate)
+	if err == nil && selection != nil {
+		return selection, nil
+	}
+	if err != nil && !errors.Is(err, ErrNoAvailableAccounts) && !errors.Is(err, ErrNoAvailableCompactAccounts) {
+		return nil, err
+	}
+	if s.recoverAllOpenAIModelTransientCooldowns(ctx, groupID, platform, requestedModel, excludedIDs, requireCompact, requiredCapability) {
+		return s.selectAccountForModelWithExclusionsOnce(ctx, groupID, platform, sessionHash, requestedModel, excludedIDs, requireCompact, stickyAccountID, requiredCapability, preferLowUpstreamRate)
+	}
+	return selection, err
+}
+
+func (s *OpenAIGatewayService) selectAccountForModelWithExclusionsOnce(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, stickyAccountID int64, requiredCapability OpenAIEndpointCapability, preferLowUpstreamRate bool) (*Account, error) {
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {
 		slog.Warn("channel pricing restriction blocked request",
@@ -921,6 +936,53 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 	}
 
 	return hydrated, nil
+}
+
+// recoverAllOpenAIModelTransientCooldowns is a bounded fail-open guard for the
+// in-memory account+model breaker. It only runs when the whole current group
+// would otherwise fail, and never clears persisted account cooldowns or hard
+// eligibility failures.
+func (s *OpenAIGatewayService) recoverAllOpenAIModelTransientCooldowns(ctx context.Context, groupID *int64, platform string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability) bool {
+	if s == nil || NormalizeOpenAICompatiblePlatform(platform) != PlatformOpenAI {
+		return false
+	}
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
+	if err != nil || len(accounts) == 0 {
+		return false
+	}
+	candidates := 0
+	for i := range accounts {
+		account := &accounts[i]
+		if excludedIDs != nil {
+			if _, excluded := excludedIDs[account.ID]; excluded {
+				continue
+			}
+		}
+		if !account.IsSchedulable() || account.Platform != PlatformOpenAI || !account.IsOpenAICompatible() ||
+			!isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx, account, platform, requestedModel, requireCompact, requiredCapability) ||
+			!account.IsModelSupported(requestedModel) || accountPersistedSchedulingCooldownActive(account) ||
+			(s.openAIGroupRequiresPrivacySet(ctx, groupID) && !account.IsPrivacySet()) ||
+			!parentHealthyForShadow(account, s.parentAccountLookup(ctx)) ||
+			s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, account) ||
+			s.isOpenAIProxyStreamQuarantined(ctx, account) ||
+			!s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
+			return false
+		}
+		candidates++
+	}
+	if candidates == 0 {
+		return false
+	}
+	for i := range accounts {
+		if excludedIDs != nil {
+			if _, excluded := excludedIDs[accounts[i].ID]; excluded {
+				continue
+			}
+		}
+		model := canonicalOpenAIAccountSchedulingModel(&accounts[i], requestedModel)
+		s.clearOpenAIAccountModelTransientState(accounts[i].ID, model)
+	}
+	return true
 }
 
 // tryStickySessionHit 尝试从粘性会话获取账号。
@@ -1282,6 +1344,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	if len(candidates) == 0 {
+		if filterStats.reasons["runtime_blocked"] == len(accounts) &&
+			s.recoverAllOpenAIModelTransientCooldowns(ctx, groupID, platform, requestedModel, excludedIDs, requireCompact, requiredCapability) {
+			return s.selectAccountWithLoadAwareness(ctx, groupID, platform, sessionHash, requestedModel, excludedIDs, requireCompact, requiredCapability, useUpstreamTokenCost)
+		}
 		return nil, noAvailableOpenAISelectionError(requestedModel, false, filterStats.summary(""))
 	}
 	rateOrder := openAILegacyUpstreamRateOrder{}

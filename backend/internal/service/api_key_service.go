@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html"
 	"math"
@@ -291,6 +292,7 @@ type APIKeyService struct {
 	cache                     APIKeyCache
 	rateLimitCacheInvalid     RateLimitCacheInvalidator // optional: invalidate Redis rate limit cache
 	concurrencyService        *ConcurrencyService
+	dashboardGroupConcurrency dashboardGroupConcurrencySampler
 	cfg                       *config.Config
 	authCacheL1               *ristretto.Cache
 	authNegativeCacheL1       *ristretto.Cache
@@ -701,7 +703,55 @@ func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) 
 }
 
 // GetByKey 根据Key字符串获取API Key（用于认证）
-func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, error) {
+func (s *APIKeyService) GetByKey(ctx context.Context, key string) (result *APIKey, resultErr error) {
+	// Auth L1/L2 snapshots can outlive an operator commit, even after a missed
+	// invalidation or restart. Copy before overriding so snapshots stay immutable.
+	defer func() {
+		if resultErr != nil || result == nil {
+			return
+		}
+		if reader, ok := s.apiKeyRepo.(APIKeyFinancialStateReader); ok {
+			if result.User == nil {
+				result, resultErr = nil, ErrUserNotFound
+				return
+			}
+			state, err := reader.GetAPIKeyFinancialState(ctx, result.ID, result.UserID)
+			if err != nil || state == nil {
+				result, resultErr = nil, ErrBillingServiceUnavailable
+				if errors.Is(err, ErrAPIKeyNotFound) {
+					resultErr = ErrAPIKeyNotFound
+				}
+				return
+			}
+			keyCopy, userCopy := *result, *result.User
+			userCopy.Balance = state.Balance
+			keyCopy.User = &userCopy
+			keyCopy.Quota, keyCopy.QuotaUsed, keyCopy.Status = state.Quota, state.QuotaUsed, state.Status
+			keyCopy.ExpiresAt = nil
+			if state.ExpiresAt != nil {
+				expiry := *state.ExpiresAt
+				keyCopy.ExpiresAt = &expiry
+			}
+			result = &keyCopy
+			return
+		}
+		if result.User == nil {
+			return
+		}
+		reader, ok := s.userRepo.(UserBalanceVersionReader)
+		if !ok {
+			return
+		}
+		balance, _, err := reader.GetUserBalanceVersion(ctx, result.UserID)
+		if err != nil {
+			result, resultErr = nil, fmt.Errorf("get authoritative auth balance: %w", err)
+			return
+		}
+		keyCopy, userCopy := *result, *result.User
+		userCopy.Balance = balance
+		keyCopy.User = &userCopy
+		result = &keyCopy
+	}()
 	if len(key) == 0 || len(key) > MaxAPIKeyCredentialBytes {
 		return nil, ErrAPIKeyNotFound
 	}

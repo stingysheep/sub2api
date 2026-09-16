@@ -43,7 +43,7 @@ func TestApplyDefaultGrokUpstreamHeadersHonorsCLIVersionOverride(t *testing.T) {
 
 func TestResolveGrokUpstreamUserAgentNeverPassthrough(t *testing.T) {
 	t.Setenv(xai.CLIVersionEnv, "")
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

@@ -114,7 +114,7 @@ func TestApplyOpenCodeSessionHeaderTrustBoundary(t *testing.T) {
 }
 
 func TestOpenCodeSessionForwardedByResponsesBuildersAfterAccountOverride(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	svc := openCodeSessionTestService()
 	account := openCodeSessionTestAccount("https://opencode.ai/zen/v1")
 	body := []byte(`{"model":"gpt-5","input":"hello"}`)
@@ -148,7 +148,7 @@ func TestOpenCodeSessionForwardedByResponsesBuildersAfterAccountOverride(t *test
 }
 
 func TestOpenCodeSessionMissingCallerValueKeepsExistingOverrideBehavior(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	svc := openCodeSessionTestService()
 	account := openCodeSessionTestAccount("https://opencode.ai/zen/v1")
 	c := newOpenCodeSessionTestContext(t, "")
@@ -179,7 +179,7 @@ func (u *openCodeSessionHTTPUpstream) DoWithTLS(req *http.Request, proxyURL stri
 }
 
 func TestOpenCodeSessionForwardedByRawChatCompletionsAfterAccountOverride(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	upstream := &openCodeSessionHTTPUpstream{}
 	svc := openCodeSessionTestService()
 	svc.httpUpstream = upstream
@@ -198,7 +198,7 @@ func TestOpenCodeSessionForwardedByRawChatCompletionsAfterAccountOverride(t *tes
 }
 
 func TestOpenCodeSessionIsNotForwardedToOtherUpstreams(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	svc := openCodeSessionTestService()
 	body := []byte(`{"model":"gpt-5","input":"hello"}`)
 

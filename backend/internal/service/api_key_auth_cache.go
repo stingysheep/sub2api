@@ -51,8 +51,10 @@ type APIKeyAuthUserSnapshot struct {
 	RPMLimit int `json:"rpm_limit"`
 
 	// UserGroupRPMOverride 该 API Key 对应的 (user, group) 专属 RPM 覆盖值。
-	// nil = 无 override（回退到 group/user 级）；0 = 不限流；>0 = 专属上限。
+	// Loaded + nil = no override; 0 = no group limit; >0 = override limit.
 	UserGroupRPMOverride *int `json:"user_group_rpm_override,omitempty"`
+	// Missing in legacy snapshots: nil override must still fall back to DB.
+	UserGroupRPMOverrideLoaded bool `json:"user_group_rpm_override_loaded,omitempty"`
 }
 
 // APIKeyAuthGroupSnapshot 分组快照

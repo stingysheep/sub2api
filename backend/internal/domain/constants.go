@@ -12,8 +12,9 @@ const (
 
 // Role constants
 const (
-	RoleAdmin = "admin"
-	RoleUser  = "user"
+	RoleAdmin    = "admin"
+	RoleOperator = "operator"
+	RoleUser     = "user"
 )
 
 // Platform constants
@@ -74,6 +75,7 @@ const (
 
 // Admin adjustment type constants
 const (
+	AdjustmentTypeOperatorBalance  = "operator_balance"
 	AdjustmentTypeAdminBalance     = "admin_balance"     // 管理员调整余额
 	AdjustmentTypeAdminConcurrency = "admin_concurrency" // 管理员调整并发数
 )

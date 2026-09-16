@@ -414,6 +414,23 @@ const routes: RouteRecordRaw[] = [
     redirect: '/admin/dashboard'
   },
   {
+    path: '/operator',
+    redirect: '/operator/users',
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'operator'] }
+  },
+  {
+    path: '/operator/users',
+    name: 'OperatorUsers',
+    component: () => import('@/views/operator/OperatorUsersView.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'operator'], title: 'Operator Users', titleKey: 'operator.users.title' }
+  },
+  {
+    path: '/operator/overview',
+    name: 'OperatorOverview',
+    component: () => import('@/views/operator/OperatorOverviewView.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['admin', 'operator'], title: 'Operator Overview', titleKey: 'operator.overview.title' }
+  },
+  {
     path: '/admin/dashboard',
     name: 'AdminDashboard',
     component: () => import('@/views/admin/DashboardView.vue'),
@@ -833,6 +850,7 @@ router.beforeEach(async (to, _from, next) => {
   // Check if route requires authentication
   const requiresAuth = to.meta.requiresAuth !== false // Default to true
   const requiresAdmin = to.meta.requiresAdmin === true
+  const allowedRoles = to.meta.allowedRoles
 
   if (!SUBSCRIPTION_UI_ENABLED && isSubscriptionRoute(to.path)) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
@@ -843,7 +861,7 @@ router.beforeEach(async (to, _from, next) => {
     try {
       const status = await getSetupStatus()
       if (!status.needs_setup) {
-        next(resolveCompletedSetupRedirectPath(authStore.isAuthenticated, authStore.isAdmin))
+        next(resolveCompletedSetupRedirectPath(authStore.isAuthenticated, authStore.isAdmin, authStore.isOperator))
         return
       }
     } catch {
@@ -857,12 +875,12 @@ router.beforeEach(async (to, _from, next) => {
     if (authStore.isAuthenticated && (to.path === '/login' || to.path === '/register')) {
       // In backend mode, non-admin users should NOT be redirected away from login
       // (they are blocked from all protected routes, so redirecting would cause a loop)
-      if (appStore.backendModeEnabled && !authStore.isAdmin) {
+      if (appStore.backendModeEnabled && !authStore.isAdmin && !authStore.isOperator) {
         next()
         return
       }
       // Admin users go to admin dashboard, regular users go to user dashboard
-      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      next(authStore.isAdmin ? '/admin/dashboard' : authStore.isOperator ? '/operator/users' : '/dashboard')
       return
     }
     // Model Plaza:公开路由但受「启用开关 + 可选强制登录」双重控制(后端同口径 fail-closed)
@@ -918,10 +936,15 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
+  if (allowedRoles && (!authStore.user || !allowedRoles.includes(authStore.user.role))) {
+    next(authStore.isAdmin ? '/admin/dashboard' : authStore.isOperator ? '/operator/users' : '/dashboard')
+    return
+  }
+
   // Check admin requirement
   if (requiresAdmin && !authStore.isAdmin) {
     // User is authenticated but not admin, redirect to user dashboard
-    next('/dashboard')
+    next(authStore.isOperator ? '/operator/users' : '/dashboard')
     return
   }
 
@@ -987,9 +1010,19 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
-  // Backend mode: admin gets full access, non-admin blocked
+  // Backend mode: admin gets full access. Operators may use only the two
+  // explicitly registered scoped routes; all other protected routes retain
+  // the existing backend-mode restriction.
   if (appStore.backendModeEnabled) {
     if (authStore.isAuthenticated && authStore.isAdmin) {
+      next()
+      return
+    }
+    const isOperatorScopedRoute =
+      authStore.isAuthenticated &&
+      authStore.isOperator &&
+      (to.path === '/operator/users' || to.path === '/operator/overview')
+    if (isOperatorScopedRoute) {
       next()
       return
     }

@@ -69,7 +69,7 @@ func runPassthroughFlushTest(
 	setups ...func(*gin.Context),
 ) (*openaiStreamingResultPassthrough, *httptest.ResponseRecorder, *passthroughFlushTestWriter, error) {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)

@@ -15,7 +15,7 @@ import (
 )
 
 func newCyberBlockTestCtx(headers map[string]string, body string) (*gin.Context, []byte) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	req := httptest.NewRequest("POST", "/openai/v1/responses", strings.NewReader(body))
 	for k, v := range headers {

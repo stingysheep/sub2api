@@ -807,7 +807,8 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 	})
 }
 
-// GetGroupConcurrency returns current request/session slots by API key group.
+// GetGroupConcurrency returns authoritative ordinary-user concurrency with
+// best-effort current API-key group and user attribution.
 // GET /api/v1/admin/dashboard/group-concurrency
 func (h *DashboardHandler) GetGroupConcurrency(c *gin.Context) {
 	snapshot, err := h.apiKeyService.GetDashboardGroupConcurrency(c.Request.Context())

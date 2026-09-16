@@ -674,18 +674,16 @@ func (s *RedeemService) Delete(ctx context.Context, id int64) error {
 
 // GetStats 获取兑换码统计信息
 func (s *RedeemService) GetStats(ctx context.Context) (map[string]any, error) {
-	// TODO: 实现统计逻辑
-	// 统计未使用、已使用的兑换码数量
-	// 统计总面值等
-
-	stats := map[string]any{
-		"total_codes":  0,
-		"unused_codes": 0,
-		"used_codes":   0,
-		"total_value":  0.0,
+	stats, err := s.readStats(ctx)
+	if err != nil {
+		return nil, err
 	}
-
-	return stats, nil
+	return map[string]any{
+		"total_codes": stats.TotalCodes, "active_codes": stats.ActiveCodes,
+		"unused_codes": stats.ActiveCodes, "used_codes": stats.UsedCodes,
+		"expired_codes": stats.ExpiredCodes, "total_value_distributed": stats.TotalValueDistributed,
+		"total_value": stats.TotalValueDistributed, "by_type": stats.ByType,
+	}, nil
 }
 
 // GetUserHistory 获取用户的兑换历史

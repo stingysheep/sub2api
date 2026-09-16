@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -184,6 +185,26 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 ) (*http.Response, error) {
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	var monitorGuard *openAIFirstOutputHeaderGuard
+	var streamGuard *openAICompatStreamGuard
+	defer func() {
+		if streamGuard != nil {
+			_ = streamGuard.Close()
+		}
+	}()
+	if stream && account.Platform == PlatformOpenAI && !IsChannelMonitorProbe(c) {
+		var deadline time.Time
+		if limit := s.openAIFirstOutputTimeout(gjson.GetBytes(body, "reasoning_effort").String()); limit > 0 {
+			deadline = time.Now().Add(limit)
+		}
+		idle := time.Duration(0)
+		if s.cfg != nil {
+			idle = time.Duration(s.cfg.Gateway.StreamDataIntervalTimeout) * time.Second
+		}
+		upstreamCtx, streamGuard = newOpenAICompatStreamGuard(ctx, deadline, idle)
+		if err := upstreamCtx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	if IsChannelMonitorProbe(c) {
 		// The monitor timeout cancels only this account's upstream attempt. The
 		// parent handler context remains alive so its failover loop can select the
@@ -252,6 +273,13 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	}
 	attemptStarted := time.Now()
 	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
+	if streamGuard != nil && errors.Is(streamGuard.Err(), errOpenAICompatFirstOutputTimeout) {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		return nil, s.newOpenAIFirstOutputTimeoutError(ctx, c, account, opsUpstreamProxyID(account), opsUpstreamProxyName(account), attemptStarted,
+			gjson.GetBytes(body, "model").String(), gjson.GetBytes(body, "reasoning_effort").String(), s.openAIFirstOutputTimeout(gjson.GetBytes(body, "reasoning_effort").String()), "response_headers", nil)
+	}
 	if monitorGuard != nil && monitorGuard.stopHeaderWait() {
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
@@ -267,6 +295,11 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	}
 	if monitorGuard != nil {
 		resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: monitorGuard.close}
+	}
+	if streamGuard != nil {
+		streamGuard.attach(resp.Body)
+		resp.Body = streamGuard
+		streamGuard = nil
 	}
 	return resp, nil
 }
@@ -299,6 +332,9 @@ func (s *OpenAIGatewayService) scanCCStream(
 	emit func(*apicompat.ChatCompletionsChunk),
 ) ccStreamScanState {
 	var st ccStreamScanState
+	var terminal openAIRawStreamTerminalState
+	var pending []*apicompat.ChatCompletionsChunk
+	pendingBytes := 0
 
 	scanner := s.newUpstreamSSEScanner(resp.Body)
 	for scanner.Scan() {
@@ -311,6 +347,7 @@ func (s *OpenAIGatewayService) scanCCStream(
 		if payload == "" {
 			continue
 		}
+		terminal.ObserveDataLine(payload)
 		if payload == "[DONE]" {
 			st.SawDone = true
 			break
@@ -337,7 +374,21 @@ func (s *OpenAIGatewayService) scanCCStream(
 		if st.FirstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) && chatChunkStartsResponsesOutput(&chunk) {
 			ms := int(time.Since(startTime).Milliseconds())
 			st.FirstTokenMs = &ms
+			observeOpenAICompatOutput(resp.Body)
 		}
+		if st.FirstTokenMs == nil && !terminal.Terminated() {
+			pendingBytes += len(payload)
+			if pendingBytes > openAIFirstOutputStageMaxBytes {
+				st.Err = errOpenAIFirstOutputStageLimit
+				break
+			}
+			pending = append(pending, &chunk)
+			continue
+		}
+		for _, preamble := range pending {
+			emit(preamble)
+		}
+		pending = nil
 		emit(&chunk)
 	}
 
@@ -349,6 +400,9 @@ func (s *OpenAIGatewayService) scanCCStream(
 			)
 		}
 		st.Err = err
+	}
+	if st.Err == nil && !terminal.Terminated() {
+		st.Err = ErrOpenAIUpstreamStreamTruncated
 	}
 	return st
 }

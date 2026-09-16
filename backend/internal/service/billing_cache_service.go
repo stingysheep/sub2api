@@ -87,6 +87,7 @@ type cacheWriteTask struct {
 	groupID          int64
 	apiKeyID         int64
 	balance          float64
+	balanceFillLease string
 	amount           float64
 	subscriptionData *subscriptionCacheData
 }
@@ -114,13 +115,14 @@ type BillingCacheService struct {
 	circuitBreaker        *billingCircuitBreaker
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 
-	cacheWriteChan     chan cacheWriteTask
-	cacheWriteWg       sync.WaitGroup
-	cacheWriteStopOnce sync.Once
-	cacheWriteMu       sync.RWMutex
-	stopped            atomic.Bool
-	balanceLoadSF      singleflight.Group
-	quotaLoadSF        singleflight.Group
+	cacheWriteChan       chan cacheWriteTask
+	cacheWriteWg         sync.WaitGroup
+	cacheWriteStopOnce   sync.Once
+	cacheWriteMu         sync.RWMutex
+	stopped              atomic.Bool
+	operatorBalanceDirty sync.Map
+	balanceLoadSF        singleflight.Group
+	quotaLoadSF          singleflight.Group
 	// 丢弃日志节流计数器（减少高负载下日志噪音）
 	cacheWriteDropFullCount     uint64
 	cacheWriteDropFullLastLog   int64
@@ -219,7 +221,7 @@ func (s *BillingCacheService) cacheWriteWorker(ch <-chan cacheWriteTask) {
 		ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
 		switch task.kind {
 		case cacheWriteSetBalance:
-			s.setBalanceCache(ctx, task.userID, task.balance)
+			s.setBalanceCache(ctx, task.userID, task.balance, task.balanceFillLease)
 		case cacheWriteSetSubscription:
 			s.setSubscriptionCache(ctx, task.userID, task.groupID, task.subscriptionData)
 		case cacheWriteUpdateSubscriptionUsage:
@@ -309,6 +311,12 @@ func (s *BillingCacheService) logCacheWriteDrop(task cacheWriteTask, reason stri
 
 // GetUserBalance 获取用户余额（优先从缓存读取）
 func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) (float64, error) {
+	if reader, ok := s.userRepo.(UserBalanceVersionReader); ok {
+		return s.getVersionedUserBalance(ctx, userID, reader)
+	}
+	if _, dirty := s.operatorBalanceDirty.Load(userID); dirty {
+		return s.getUserBalanceFromDB(ctx, userID)
+	}
 	if s.cache == nil {
 		// Redis不可用，直接查询数据库
 		return s.getUserBalanceFromDB(ctx, userID)
@@ -316,6 +324,9 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 
 	// 尝试从缓存读取
 	balance, err := s.cache.GetUserBalance(ctx, userID)
+	if _, dirty := s.operatorBalanceDirty.Load(userID); dirty {
+		return s.getUserBalanceFromDB(ctx, userID)
+	}
 	if err == nil {
 		return balance, nil
 	}
@@ -325,17 +336,34 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 		loadCtx, cancel := context.WithTimeout(context.Background(), balanceLoadTimeout)
 		defer cancel()
 
+		if _, dirty := s.operatorBalanceDirty.Load(userID); dirty {
+			return s.getUserBalanceFromDB(loadCtx, userID)
+		}
+		// Another load may have completed since the first cache lookup.
+		if balance, err := s.cache.GetUserBalance(loadCtx, userID); err == nil {
+			return balance, nil
+		}
+		var lease string
+		if filler, ok := s.cache.(BalanceCacheFiller); ok {
+			// On Redis errors or lease contention, read the DB without filling.
+			if token, err := filler.BeginUserBalanceFill(loadCtx, userID); err == nil {
+				lease = token
+			}
+		}
 		balance, err := s.getUserBalanceFromDB(loadCtx, userID)
 		if err != nil {
 			return nil, err
 		}
 
-		// 异步建立缓存
-		_ = s.enqueueCacheWrite(cacheWriteTask{
-			kind:    cacheWriteSetBalance,
-			userID:  userID,
-			balance: balance,
-		})
+		// Legacy caches cannot fence writes; never fall back to unconditional SET.
+		if lease != "" {
+			_ = s.enqueueCacheWrite(cacheWriteTask{
+				kind:             cacheWriteSetBalance,
+				userID:           userID,
+				balance:          balance,
+				balanceFillLease: lease,
+			})
+		}
 		return balance, nil
 	})
 	if err != nil {
@@ -350,6 +378,9 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 
 // getUserBalanceFromDB 从数据库获取用户余额
 func (s *BillingCacheService) getUserBalanceFromDB(ctx context.Context, userID int64) (float64, error) {
+	if s.userRepo == nil {
+		return 0, errBillingCacheUnavailable
+	}
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return 0, fmt.Errorf("get user balance: %w", err)
@@ -357,12 +388,52 @@ func (s *BillingCacheService) getUserBalanceFromDB(ctx context.Context, userID i
 	return user.Balance, nil
 }
 
+// getVersionedUserBalance checks the primary generation on every request,
+// including Redis hits. No local dirty bit or PubSub delivery is required.
+func (s *BillingCacheService) getVersionedUserBalance(ctx context.Context, userID int64, reader UserBalanceVersionReader) (float64, error) {
+	balance, version, err := reader.GetUserBalanceVersion(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("get user balance generation: %w", err)
+	}
+	guard, ok := s.cache.(BalanceCacheVersionGuard)
+	if !ok {
+		return balance, nil
+	}
+	matched, err := guard.EnsureUserBalanceVersion(ctx, userID, version)
+	if err != nil || !matched {
+		return balance, nil
+	}
+	if _, err := s.cache.GetUserBalance(ctx, userID); err == nil {
+		return balance, nil
+	}
+	// Misses retain fenced cache-aside filling. The second bounded read must be
+	// after acquiring the lease so a deduction cannot resurrect a stale value.
+	filler, ok := s.cache.(BalanceCacheFiller)
+	if !ok {
+		return balance, nil
+	}
+	lease, err := filler.BeginUserBalanceFill(ctx, userID)
+	if err != nil || lease == "" {
+		return balance, nil
+	}
+	balance, version, err = reader.GetUserBalanceVersion(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("load user balance generation: %w", err)
+	}
+	matched, err = guard.EnsureUserBalanceVersion(ctx, userID, version)
+	if err == nil && matched {
+		_ = s.enqueueCacheWrite(cacheWriteTask{kind: cacheWriteSetBalance, userID: userID, balance: balance, balanceFillLease: lease})
+	}
+	return balance, nil
+}
+
 // setBalanceCache 设置余额缓存
-func (s *BillingCacheService) setBalanceCache(ctx context.Context, userID int64, balance float64) {
-	if s.cache == nil {
+func (s *BillingCacheService) setBalanceCache(ctx context.Context, userID int64, balance float64, lease string) {
+	filler, ok := s.cache.(BalanceCacheFiller)
+	if !ok || lease == "" {
 		return
 	}
-	if err := s.cache.SetUserBalance(ctx, userID, balance); err != nil {
+	if err := filler.FillUserBalance(ctx, userID, balance, lease); err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: set balance cache failed for user %d: %v", userID, err)
 	}
 }
@@ -395,14 +466,26 @@ func (s *BillingCacheService) QueueDeductBalance(userID int64, amount float64) {
 	}
 }
 
+// MarkOperatorBalanceDirty forces authoritative reads until invalidation is acknowledged.
+func (s *BillingCacheService) MarkOperatorBalanceDirty(userID int64) {
+	s.operatorBalanceDirty.Store(userID, new(byte))
+}
+
 // InvalidateUserBalance 失效用户余额缓存
 func (s *BillingCacheService) InvalidateUserBalance(ctx context.Context, userID int64) error {
+	dirtyGeneration, wasDirty := s.operatorBalanceDirty.Load(userID)
 	if s.cache == nil {
+		if wasDirty {
+			s.operatorBalanceDirty.CompareAndDelete(userID, dirtyGeneration)
+		}
 		return nil
 	}
 	if err := s.cache.InvalidateUserBalance(ctx, userID); err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: invalidate balance cache failed for user %d: %v", userID, err)
 		return err
+	}
+	if wasDirty {
+		s.operatorBalanceDirty.CompareAndDelete(userID, dirtyGeneration)
 	}
 	return nil
 }
@@ -792,9 +875,11 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 
 	// ── 第一层：分组级检查（override 或 group.rpm_limit） ──
 	if group != nil {
-		// 解析 override：优先从 auth cache snapshot，nil 时回退 DB。
+		// Only unknown snapshots fall back to DB; known absence uses group limits.
 		var override *int
-		if user.UserGroupRPMOverride != nil {
+		matchesGroup := user.UserGroupRPMOverrideGroupID == group.ID
+		legacyOverride := user.UserGroupRPMOverride != nil && user.UserGroupRPMOverrideGroupID == 0
+		if (matchesGroup && (user.UserGroupRPMOverrideLoaded || user.UserGroupRPMOverride != nil)) || legacyOverride {
 			override = user.UserGroupRPMOverride
 		} else if s.userGroupRateRepo != nil {
 			dbOverride, err := s.userGroupRateRepo.GetRPMOverrideByUserAndGroup(ctx, user.ID, group.ID)

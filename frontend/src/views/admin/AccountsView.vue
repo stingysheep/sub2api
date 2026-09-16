@@ -531,7 +531,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch, defineAsyncComponent } from 'vue'
-import { useIntervalFn } from '@vueuse/core'
+import { useDebounceFn, useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
@@ -1186,7 +1186,6 @@ const {
   pagination,
   load: baseLoad,
   reload: baseReload,
-  debouncedReload: baseDebouncedReload,
   handlePageChange: baseHandlePageChange,
   handlePageSizeChange: baseHandlePageSizeChange
 } = useTableLoader<AccountListItem, any>({
@@ -1235,11 +1234,13 @@ const loadProfileAccounts = async () => {
   }
   try {
     const pageSize = 1000
-    const first = await adminAPI.accounts.list(1, pageSize, profileAccountFilters())
+    const filters = profileAccountFilters()
+    const first = await adminAPI.accounts.list(1, pageSize, filters)
     const all = [...(first.items || [])]
     const pages = Math.max(1, Number(first.pages || Math.ceil(Number(first.total || 0) / pageSize)))
     for (let page = 2; page <= pages; page += 1) {
-      const next = await adminAPI.accounts.list(page, pageSize, profileAccountFilters())
+      if (requestSeq !== profileAccountsRequestSeq) return
+      const next = await adminAPI.accounts.list(page, pageSize, filters)
       all.push(...(next.items || []))
     }
     if (requestSeq === profileAccountsRequestSeq) profileAccounts.value = all
@@ -1518,14 +1519,17 @@ const refreshUpstreamBillingSortedList = async (force = false) => {
 
 useIntervalFn(() => { void refreshUpstreamBillingRates() }, 5 * 60_000, { immediate: false })
 
+let isDisposed = false
+const debouncedFullReload = useDebounceFn(() => {
+  if (!isDisposed) return reload()
+}, 300)
 const debouncedReload = () => {
   clearSelection()
   profilePage.value = 1
-  syncAccountListDerivedParams()
-  hasPendingListSync.value = false
-  resetAutoRefreshCache()
-  pendingTodayStatsRefresh.value = true
-  baseDebouncedReload()
+  // Invalidate the old category result before the debounce window starts.
+  profileAccountsRequestSeq++
+  profileAccounts.value = []
+  debouncedFullReload()
 }
 
 const handlePageChange = (page: number) => {
@@ -2877,6 +2881,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  isDisposed = true
+  profileAccountsRequestSeq++
   endProfileNavResize()
   upstreamBillingRateAbortController?.abort()
   if (usageBatchFlushTimer !== null) {

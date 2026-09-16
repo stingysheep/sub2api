@@ -4523,6 +4523,7 @@ import { createStableObjectKeyResolver } from "@/utils/stableObjectKey";
 import { extractApiErrorMessage } from "@/utils/apiError";
 import { useKeyedDebouncedSearch } from "@/composables/useKeyedDebouncedSearch";
 import { getPersistedPageSize } from "@/composables/usePersistedPageSize";
+import { useGroupLiveCapability } from "./useGroupLiveCapability";
 import {
   createDefaultMessagesDispatchFormState,
   messagesDispatchConfigToFormState,
@@ -5536,15 +5537,6 @@ let abortController: AbortController | null = null;
 const showCreateModal = ref(false);
 const showEditModal = ref(false);
 const showDeleteDialog = ref(false);
-const pendingLiveForm = ref<"create" | "edit" | null>(null);
-const showUnsupportedLiveConfirm = computed(
-  () => pendingLiveForm.value !== null,
-);
-const liveCapability = ref<{ supported: boolean; reason?: string } | null>(null);
-let liveCapabilityRequest: Promise<{
-  supported: boolean;
-  reason?: string;
-}> | null = null;
 const showSortModal = ref(false);
 const submitting = ref(false);
 const sortSubmitting = ref(false);
@@ -6262,43 +6254,17 @@ const deleteConfirmMessage = computed(() => {
   return t("admin.groups.deleteConfirm", { name: deletingGroup.value.name });
 });
 
-const loadLiveCapability = async () => {
-  if (liveCapability.value) return liveCapability.value;
-  if (!liveCapabilityRequest) {
-    liveCapabilityRequest = adminAPI.groups
-      .getLiveCapability()
-      .catch(() => ({ supported: false }))
-      .finally(() => {
-        liveCapabilityRequest = null;
-      });
-  }
-  liveCapability.value = await liveCapabilityRequest;
-  return liveCapability.value ?? { supported: false };
-};
-
-const toggleLive = async (target: "create" | "edit") => {
-  const form = target === "create" ? createForm : editForm;
-  if (form.allow_live) {
-    form.allow_live = false;
-    return;
-  }
-  const capability = await loadLiveCapability();
-  if (capability.supported) {
-    form.allow_live = true;
-    return;
-  }
-  pendingLiveForm.value = target;
-};
-
-const confirmUnsupportedLive = () => {
-  if (pendingLiveForm.value === "create") createForm.allow_live = true;
-  if (pendingLiveForm.value === "edit") editForm.allow_live = true;
-  pendingLiveForm.value = null;
-};
-
-const cancelUnsupportedLive = () => {
-  pendingLiveForm.value = null;
-};
+const {
+  showUnsupportedLiveConfirm,
+  loadLiveCapability,
+  toggleLive,
+  confirmUnsupportedLive,
+  cancelUnsupportedLive,
+} = useGroupLiveCapability({
+  createForm,
+  editForm,
+  getLiveCapability: () => adminAPI.groups.getLiveCapability(),
+});
 
 const loadGroupCategories = async () => {
   try {
@@ -6334,9 +6300,10 @@ const loadGroups = async () => {
   loading.value = true;
   try {
     if (activeCategoryId.value !== 'all') {
-      const allGroups = categoryGroups.value.length > 0
-        ? categoryGroups.value
-        : await adminAPI.groups.getAllIncludingInactive();
+      // Category rows also seed full edit forms, so every reload must use fresh data.
+      const allGroups = await adminAPI.groups.getAllIncludingInactive();
+      if (signal.aborted) return;
+      categoryGroups.value = allGroups;
       const categoryByGroupID = new Map<number, number>();
       for (const category of groupCategories.value) {
         for (const groupID of category.group_ids) categoryByGroupID.set(groupID, category.id);

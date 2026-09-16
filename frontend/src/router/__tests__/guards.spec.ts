@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { resolveCompletedSetupRedirectPath } from '@/router/setupRedirect'
 
+describe('operator route redirects', () => {
+  it('sends an authenticated operator to the scoped users area after setup', () => {
+    expect(resolveCompletedSetupRedirectPath(true, false, true)).toBe('/operator/users')
+  })
+})
+
 // Mock 导航加载状态
 vi.mock('@/composables/useNavigationLoading', () => {
   const mockStart = vi.fn()
@@ -55,6 +61,7 @@ interface MockAuthState {
   backendModeEnabled: boolean
   hasPendingAuthSession: boolean
   setupNeedsSetup?: boolean
+  role?: 'admin' | 'operator' | 'user'
 }
 
 /**
@@ -109,6 +116,10 @@ function simulateGuard(
     return '/login'
   }
 
+  if (toMeta.allowedRoles && (!authState.role || !toMeta.allowedRoles.includes(authState.role))) {
+    return authState.isAdmin ? '/admin/dashboard' : authState.role === 'operator' ? '/operator/users' : '/dashboard'
+  }
+
   // 需要管理员但不是管理员
   if (requiresAdmin && !authState.isAdmin) {
     return '/dashboard'
@@ -152,6 +163,20 @@ function simulateGuard(
 
   return null // 允许通过
 }
+
+describe('operator role isolation', () => {
+  it('allows operator scoped routes and redirects regular users', () => {
+    const meta = { requiresAuth: true, allowedRoles: ['admin', 'operator'] }
+    expect(simulateGuard('/operator/users', meta, {
+      isAuthenticated: true, isAdmin: false, isSimpleMode: false, backendModeEnabled: false,
+      hasPendingAuthSession: false, role: 'operator'
+    })).toBeNull()
+    expect(simulateGuard('/operator/users', meta, {
+      isAuthenticated: true, isAdmin: false, isSimpleMode: false, backendModeEnabled: false,
+      hasPendingAuthSession: false, role: 'user'
+    })).toBe('/dashboard')
+  })
+})
 
 describe('路由守卫逻辑', () => {
   beforeEach(() => {

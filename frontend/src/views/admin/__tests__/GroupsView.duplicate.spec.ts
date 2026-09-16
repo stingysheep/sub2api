@@ -51,6 +51,8 @@ vi.mock('@/api/admin', () => ({
       getCapacitySummary,
       getLiveCapability,
       getAll: vi.fn(),
+      getCategories: vi.fn().mockResolvedValue([{ id: 7, name: 'Category', group_ids: [42] }]),
+      getAllIncludingInactive: vi.fn(),
       create: vi.fn(),
       update: updateGroup,
       delete: vi.fn(),
@@ -193,7 +195,8 @@ function mountView() {
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
-        VueDraggable: true
+        VueDraggable: true,
+        GroupCategoriesPanel: true
       }
     }
   })
@@ -243,10 +246,45 @@ describe('GroupsView duplicate action', () => {
     getLiveCapability.mockResolvedValue({ supported: false })
     getWebSearchEmulationConfig.mockResolvedValue({ enabled: false })
     getSettings.mockResolvedValue({ account_quota_notify_enabled: false })
+    vi.mocked(adminAPI.groups.getAllIncludingInactive).mockReset().mockResolvedValue([{ ...sourceGroup }])
+    vi.mocked(adminAPI.groups.getCategories).mockResolvedValue([{ id: 7, name: 'Category', group_ids: [42], sort_order: 0 }])
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('uses the saved category group multiplier when editing the full form again', async () => {
+    let savedGroup = { ...sourceGroup }
+    vi.mocked(adminAPI.groups.getAllIncludingInactive).mockImplementation(async () => [{ ...savedGroup }])
+    updateGroup.mockImplementation(async (_id, payload) => {
+      savedGroup = { ...savedGroup, ...payload }
+      return { ...savedGroup }
+    })
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      wrapper.findComponent({ name: 'GroupCategoriesPanel' }).vm.$emit('select', 7)
+      await flushPromises()
+      const edit = () => wrapper.findAll('button').find(button => button.text() === 'common.edit')!
+      await edit().trigger('click')
+      await flushPromises()
+      const vm = wrapper.vm as unknown as { editForm: { rate_multiplier: number; description: string } }
+      vm.editForm.rate_multiplier = 2.5
+      await wrapper.get('#edit-group-form').trigger('submit')
+      await flushPromises()
+      expect(updateGroup).toHaveBeenLastCalledWith(42, expect.objectContaining({ rate_multiplier: 2.5 }))
+      await edit().trigger('click')
+      await flushPromises()
+      vm.editForm.description = 'Second edit'
+      await wrapper.get('#edit-group-form').trigger('submit')
+      await flushPromises()
+      expect(updateGroup).toHaveBeenLastCalledWith(42, expect.objectContaining({
+        rate_multiplier: 2.5, description: 'Second edit'
+      }))
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('duplicates the selected group, reports success, and refreshes the list', async () => {
@@ -261,6 +299,27 @@ describe('GroupsView duplicate action', () => {
     expect(showSuccess).toHaveBeenCalledWith('admin.groups.duplicateSuccess')
     expect(listGroups).toHaveBeenCalledTimes(2)
     wrapper.unmount()
+  })
+
+  it('does not publish a late category response after returning to the base list', async () => {
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      let resolveOld!: (rows: AdminGroup[]) => void
+      vi.mocked(adminAPI.groups.getAllIncludingInactive).mockImplementationOnce(
+        () => new Promise(resolve => { resolveOld = resolve })
+      )
+      const panel = wrapper.findComponent({ name: 'GroupCategoriesPanel' })
+      panel.vm.$emit('select', 7)
+      await flushPromises()
+      const latest = { ...sourceGroup, rate_multiplier: 3 }
+      listGroups.mockResolvedValueOnce({ items: [latest], total: 1, pages: 1 })
+      panel.vm.$emit('select', 'all')
+      await flushPromises()
+      resolveOld([{ ...sourceGroup, rate_multiplier: 1 }])
+      await flushPromises()
+      expect(wrapper.getComponent(DataTableStub).props('data')).toEqual([latest])
+    } finally { wrapper.unmount() }
   })
 
   it('hides advanced group actions in simple mode', async () => {

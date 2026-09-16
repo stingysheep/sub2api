@@ -2,14 +2,20 @@ export default {
     // Dashboard
     dashboard: {
       groupConcurrency: {
-        title: '分组实时并发',
-        description: '按 API Key 当前所属分组统计在途请求与 Live 会话，每 5 秒刷新；包含等待上游的请求。',
+        title: '用户实时并发',
+        description: '总并发与使用人数来自普通用户并发槽；分组和用户明细按当前 API Key 槽归属观测，每 5 秒刷新。',
         showIdle: '显示空闲分组',
+        collapse: '折叠',
+        expand: '展开',
         activeGroups: '{count} 个分组使用中',
-        total: '当前共 {count} 并发',
+        total: '当前用户并发 {count}',
+        activeUsers: '{count} 位用户正在使用',
+        activeUserList: '当前使用用户（完整邮箱 · 用户并发槽）',
+        groupActiveUsers: '{count} 位用户',
+        userConcurrency: '{count} 并发',
+        attribution: '分组明细已归属 {attributed}/{total} 个并发，尚有 {unattributed} 个用户并发未能按 API Key 槽归属；总并发仍以用户槽为准。',
         updatedAt: '更新于 {time}',
         unassigned: '未分组',
-        active: '使用中',
         idle: '空闲',
         unit: '并发',
         empty: '当前没有分组正在使用',
@@ -514,6 +520,7 @@ export default {
       statusFilter: '状态筛选',
       allStatuses: '全部状态',
       admin: '管理员',
+      operator: '运营员',
       user: '用户',
       disabled: '禁用',
       email: '邮箱',
@@ -595,6 +602,7 @@ export default {
       deleteConfirm: "确定要删除用户 '{email}' 吗？此操作无法撤销。",
       roles: {
         admin: '管理员',
+        operator: '运营员',
         user: '用户'
       },
       form: {

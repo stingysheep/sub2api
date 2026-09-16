@@ -49,7 +49,11 @@ func (s *adminServiceImpl) ListUsers(ctx context.Context, page, pageSize int, fi
 			ratesByUser, err := batchRepo.GetByUserIDs(ctx, userIDs)
 			if err != nil {
 				logger.LegacyPrintf("service.admin", "failed to load user group rates in batch: err=%v", err)
-				s.loadUserGroupRatesOneByOne(ctx, users)
+				// 单次失败最多降级读取 20 人；首个单查失败即停止，避免
+				// 数据库不可用时把一次失败放大成整页 N 次查询。
+				if fallbackErr := s.loadUserGroupRatesWithBudget(ctx, users, 20, true); fallbackErr != nil {
+					return nil, 0, fmt.Errorf("user group rates unavailable after batch failure: %w", fallbackErr)
+				}
 			} else {
 				for i := range users {
 					if rates, ok := ratesByUser[users[i].ID]; ok {
@@ -65,17 +69,31 @@ func (s *adminServiceImpl) ListUsers(ctx context.Context, page, pageSize int, fi
 }
 
 func (s *adminServiceImpl) loadUserGroupRatesOneByOne(ctx context.Context, users []User) {
+	_ = s.loadUserGroupRatesWithBudget(ctx, users, len(users), false)
+}
+
+func (s *adminServiceImpl) loadUserGroupRatesWithBudget(ctx context.Context, users []User, budget int, stopOnError bool) error {
 	if s.userGroupRateRepo == nil {
-		return
+		return nil
 	}
 	for i := range users {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if i >= budget {
+			return errors.New("user group rate fallback query budget exceeded")
+		}
 		rates, err := s.userGroupRateRepo.GetByUserID(ctx, users[i].ID)
 		if err != nil {
 			logger.LegacyPrintf("service.admin", "failed to load user group rates: user_id=%d err=%v", users[i].ID, err)
+			if stopOnError {
+				return err
+			}
 			continue
 		}
 		users[i].GroupRates = rates
 	}
+	return nil
 }
 
 func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error) {
@@ -111,8 +129,8 @@ func normalizeUserRole(role, fallback string) (string, error) {
 	if role == "" {
 		return fallback, nil
 	}
-	if role != RoleAdmin && role != RoleUser {
-		return "", fmt.Errorf("invalid role: %q (must be %s or %s)", role, RoleAdmin, RoleUser)
+	if role != RoleAdmin && role != RoleUser && role != RoleOperator {
+		return "", fmt.Errorf("invalid role: %q (must be %s, %s or %s)", role, RoleAdmin, RoleUser, RoleOperator)
 	}
 	return role, nil
 }
@@ -160,8 +178,8 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 }
 
 // ensureNotLastAdmin 降级管理员前确认系统中仍存在其他管理员，防止零 admin 锁死。
-// 注：读取与写入之间存在竞态窗口，极端并发下仍可能双双降级；作为后台低频操作
-// 的兜底保护足够，彻底防护需依赖数据库层约束。
+// 此处只是提前校验；repository 会在共享数据库事务锁内重新检查并写入，
+// 并覆盖并发角色/状态更新以及删除路径。
 func (s *adminServiceImpl) ensureNotLastAdmin(ctx context.Context) error {
 	noSubs := false
 	_, result, err := s.userRepo.ListWithFilters(ctx,
@@ -257,7 +275,7 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		}
 		// 防锁死保护：不允许降级系统中最后一个管理员（自我降级已在 handler 层拦截，
 		// 此处兜底覆盖跨管理员互降导致零 admin 的场景）。
-		if user.Role == RoleAdmin && role == RoleUser {
+		if user.Role == RoleAdmin && role != RoleAdmin {
 			if err := s.ensureNotLastAdmin(ctx); err != nil {
 				return nil, err
 			}

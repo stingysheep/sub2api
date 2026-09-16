@@ -150,6 +150,77 @@ func TestAdminService_ListUsers_BatchRateFallbackToSingle(t *testing.T) {
 	require.Equal(t, 2.2, users[1].GroupRates[22])
 }
 
+func TestAdminService_ListUsers_BatchRateFailureStopsOnSingleFailure(t *testing.T) {
+	users := make([]User, 1000)
+	for i := range users {
+		users[i].ID = int64(i + 1)
+	}
+	repo := &userGroupRateRepoStubForListUsers{
+		batchErr:  errors.New("database unavailable"),
+		singleErr: map[int64]error{1: errors.New("database unavailable")},
+	}
+	svc := &adminServiceImpl{userRepo: &userRepoStubForListUsers{users: users}, userGroupRateRepo: repo}
+	got, _, err := svc.ListUsers(context.Background(), 1, 1000, UserListFilters{}, "", "")
+	require.ErrorContains(t, err, "user group rates unavailable")
+	require.Nil(t, got, "incomplete rates must not look like absent overrides")
+	require.Equal(t, 1, repo.batchCalls)
+	require.Equal(t, []int64{1}, repo.singleCall, "outage must cost only one fallback query, not N")
+}
+
+func TestAdminService_ListUsers_BatchRateFailureHasQueryBudget(t *testing.T) {
+	users := make([]User, 1000)
+	for i := range users {
+		users[i].ID = int64(i + 1)
+	}
+	repo := &userGroupRateRepoStubForListUsers{batchErr: errors.New("batch unavailable")}
+	svc := &adminServiceImpl{userRepo: &userRepoStubForListUsers{users: users}, userGroupRateRepo: repo}
+	got, _, err := svc.ListUsers(context.Background(), 1, 1000, UserListFilters{}, "", "")
+	require.ErrorContains(t, err, "budget exceeded")
+	require.Nil(t, got)
+	require.Len(t, repo.singleCall, 20, "successful fallback reads must also be bounded")
+}
+
+func TestAdminService_ListUsers_BatchRateFallbackHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	repo := &userGroupRateRepoStubForListUsers{batchErr: context.Canceled}
+	svc := &adminServiceImpl{userRepo: &userRepoStubForListUsers{users: []User{{ID: 1}}}, userGroupRateRepo: repo}
+	_, _, err := svc.ListUsers(ctx, 1, 20, UserListFilters{}, "", "")
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, repo.singleCall)
+}
+
+// Wrapper intentionally omits the optional batch interface to cover legacy repositories.
+type userGroupRateSingleReaderForListUsers struct {
+	UserGroupRateRepository
+	stub *userGroupRateRepoStubForListUsers
+}
+
+func (r *userGroupRateSingleReaderForListUsers) GetByUserID(ctx context.Context, id int64) (map[int64]float64, error) {
+	return r.stub.GetByUserID(ctx, id)
+}
+
+func TestAdminService_ListUsers_LegacySingleReaderKeepsCompatibility(t *testing.T) {
+	users := make([]User, 30)
+	for i := range users {
+		users[i].ID = int64(i + 1)
+	}
+	repo := &userGroupRateRepoStubForListUsers{
+		singleErr:  map[int64]error{1: errors.New("one user unavailable")},
+		singleData: map[int64]map[int64]float64{30: {11: 1.5}},
+	}
+	svc := &adminServiceImpl{
+		userRepo:          &userRepoStubForListUsers{users: users},
+		userGroupRateRepo: &userGroupRateSingleReaderForListUsers{UserGroupRateRepository: repo, stub: repo},
+	}
+	got, total, err := svc.ListUsers(context.Background(), 1, 30, UserListFilters{}, "", "")
+	require.NoError(t, err)
+	require.Equal(t, int64(30), total)
+	require.Len(t, repo.singleCall, 30)
+	require.Equal(t, 1.5, got[29].GroupRates[11])
+	require.Zero(t, repo.batchCalls)
+}
+
 func TestAdminService_ListUsers_PassesSortParams(t *testing.T) {
 	userRepo := &userRepoStubForListUsers{
 		users: []User{{ID: 1, Email: "a@example.com"}},

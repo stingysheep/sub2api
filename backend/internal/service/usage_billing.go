@@ -14,9 +14,19 @@ import (
 
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
 var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")
+var ErrUsageBillingRecoveryRequired = errors.New("usage billing requires durable recovery")
+
+// UsageBillingWithUsage persists recovery intent before applying money. Errors
+// must not create a zero-cost usage row which would obstruct later restoration.
+type UsageBillingWithUsage interface {
+	ApplyWithUsage(context.Context, *UsageBillingCommand, *UsageLog) (*UsageBillingApplyResult, error)
+}
 
 // UsageBillingCommand describes one billable request that must be applied at most once.
 type UsageBillingCommand struct {
+	// Recovery is transient, excluded from the fingerprint, and set only by the
+	// recovery worker to atomically revoke balance caches with a recovered debit.
+	Recovery           bool `json:"-"`
 	RequestID          string
 	APIKeyID           int64
 	RequestFingerprint string

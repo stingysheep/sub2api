@@ -88,7 +88,7 @@ func TestSyncBillingHeaderVersion_RecomputesSuffixAndIsIdempotent(t *testing.T) 
 }
 
 func TestBuildOAuthRequest_BillingMatchesWireUserAgent(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	for _, endpoint := range []string{"messages", "count_tokens"} {
 		for _, tc := range []struct {
 			name      string

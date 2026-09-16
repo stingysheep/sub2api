@@ -32,7 +32,7 @@ func TestOpenAIResponsesRejectedFieldRetryStateRejectsDuplicateBodyAndCap(t *tes
 }
 
 func TestOpenAIResponsesRejectedFieldRetryStateForRequestAllowsSameTransformAcrossAccounts(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	initialBody := []byte(`{"model":"gpt-5.5","truncation":"auto"}`)
 	retryBody := []byte(`{"model":"gpt-5.5"}`)
@@ -48,7 +48,7 @@ func TestOpenAIResponsesRejectedFieldRetryStateForRequestAllowsSameTransformAcro
 }
 
 func TestOpenAIResponsesRejectedFieldRetryStateForRequestSharesBoundedBudgetAcrossAccounts(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	for attempt := 0; attempt < maxOpenAIResponsesRejectedFieldRetries; attempt++ {
 		state := openAIResponsesRejectedFieldRetryStateForRequest(c, []byte(fmt.Sprintf(`{"account":%d}`, attempt)))
@@ -658,7 +658,7 @@ func newOpenAIRejectedFieldTestService(upstream *httpUpstreamRecorder) *OpenAIGa
 }
 
 func newOpenAIRejectedFieldTestContext(body []byte) *gin.Context {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))

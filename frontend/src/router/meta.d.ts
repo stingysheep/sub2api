@@ -18,6 +18,7 @@ declare module 'vue-router' {
      * @default false
      */
     requiresAdmin?: boolean
+    allowedRoles?: Array<'admin' | 'operator' | 'user'>
 
     /**
      * Page title for this route

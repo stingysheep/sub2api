@@ -1164,6 +1164,9 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 		return false
 	}
 	switch strings.TrimSpace(eventType) {
+	case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+		// Empty text/reasoning deltas produce no output in the Chat converter.
+		return !gjson.Valid(trimmed) || gjson.Get(trimmed, "delta").String() != ""
 	case "response.failed":
 		return false
 	case "error":

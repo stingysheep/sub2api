@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +23,67 @@ func TestProvideServiceBuildInfo(t *testing.T) {
 }
 
 func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
+	cleanup := minimalDependencyCleanup(nil, &service.UsageRecordWorkerPool{})
+	require.NotPanics(t, cleanup)
+}
+
+type cleanupBillingRepository struct {
+	service.UsageBillingRepository
+	closeFn func()
+}
+
+func (r *cleanupBillingRepository) Close() { r.closeFn() }
+
+func TestProvideCleanup_DrainsUsageWorkerBeforeClosingJournal(t *testing.T) {
+	pool := service.NewUsageRecordWorkerPoolWithOptions(service.UsageRecordWorkerPoolOptions{
+		WorkerCount: 1, QueueSize: 1, TaskTimeout: time.Second,
+	})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseTask := func() { releaseOnce.Do(func() { close(release) }) }
+	defer func() { releaseTask(); pool.Stop() }()
+	require.Equal(t, service.UsageRecordSubmitModeEnqueued, pool.Submit(func(context.Context) {
+		close(started)
+		<-release
+	}))
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("usage task did not start")
+	}
+	type closeState struct {
+		completed uint64
+		mode      service.UsageRecordSubmitMode
+	}
+	closed := make(chan closeState, 1)
+	repo := &cleanupBillingRepository{closeFn: func() {
+		closed <- closeState{pool.Stats().CompletedTasks, pool.Submit(func(context.Context) {})}
+	}}
+	cleanup := minimalDependencyCleanup(repo, pool)
+	done := make(chan struct{})
+	go func() { cleanup(); close(done) }()
+	select {
+	case <-closed:
+		t.Fatal("journal closed while usage task was still running")
+	case <-time.After(100 * time.Millisecond):
+	}
+	releaseTask()
+	select {
+	case state := <-closed:
+		require.Equal(t, uint64(1), state.completed)
+		require.Equal(t, service.UsageRecordSubmitModeDroppedStopped, state.mode)
+	case <-time.After(5 * time.Second):
+		t.Fatal("journal did not close after usage task drained")
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cleanup did not finish")
+	}
+}
+
+func minimalDependencyCleanup(usageBillingRepo service.UsageBillingRepository, usagePool *service.UsageRecordWorkerPool) func() {
 	cfg := &config.Config{}
 
 	oauthSvc := service.NewOAuthService(nil, nil)
@@ -50,8 +113,9 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 	schedulerSnapshotSvc := service.NewSchedulerSnapshotService(nil, nil, nil, nil, cfg)
 	opsSystemLogSinkSvc := service.NewOpsSystemLogSink(nil)
 
-	cleanup := provideCleanup(
+	return provideCleanup(
 		nil, // entClient
+		usageBillingRepo,
 		nil, // redis
 		&service.OpsMetricsCollector{},
 		&service.OpsAggregationService{},
@@ -77,7 +141,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		pricingSvc,
 		emailQueueSvc,
 		billingCacheSvc,
-		&service.UsageRecordWorkerPool{},
+		usagePool,
 		&service.SubscriptionService{},
 		oauthSvc,
 		openAIOAuthSvc,
@@ -98,8 +162,4 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // promptAudit
 		nil, // pluginManager
 	)
-
-	require.NotPanics(t, func() {
-		cleanup()
-	})
 }

@@ -13,7 +13,7 @@ import (
 )
 
 func TestGatewayCompatPoolMode429AllowsSameAccountRetry(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	tests := []struct {
 		name string

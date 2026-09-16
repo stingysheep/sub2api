@@ -33,7 +33,7 @@ func TestNormalizeOpenAICompactRequestBodyPreservesServiceTier(t *testing.T) {
 }
 
 func TestOpenAIOAuthCompactHTTPBuildersUsePreservedServiceTierInRoutingHint(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	body := []byte(`{
 		"model":"gpt-5.6-sol",
 		"input":[{"type":"message","role":"user","content":"hello"}],

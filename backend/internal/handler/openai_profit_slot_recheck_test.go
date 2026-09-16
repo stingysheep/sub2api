@@ -89,6 +89,7 @@ func TestAcquireResponsesAccountSlotProfitRecheck(t *testing.T) {
 		}
 	}
 	newSelection := func(account *service.Account) *service.AccountSelectionResult {
+		account.GroupIDs = []int64{groupID}
 		return &service.AccountSelectionResult{
 			Account:  account,
 			Acquired: false,

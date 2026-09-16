@@ -392,6 +392,7 @@ func (s *AuthService) useOAuthRegistrationInvitation(ctx context.Context, invita
 		affected, err := client.RedeemCode.Update().
 			Where(
 				redeemcode.IDEQ(invitationID),
+				redeemcode.TypeNEQ(AdjustmentTypeOperatorBalance), redeemcode.Not(redeemcode.CodeHasPrefix("op_")),
 				redeemcode.StatusEQ(StatusUnused),
 				redeemcode.Or(redeemcode.ExpiresAtIsNil(), redeemcode.ExpiresAtGT(time.Now().UTC())),
 			).
@@ -414,8 +415,11 @@ func (s *AuthService) updateOAuthRegistrationInvitation(ctx context.Context, cod
 	if code == nil {
 		return nil
 	}
+	if code.Type == AdjustmentTypeOperatorBalance || strings.HasPrefix(strings.ToLower(code.Code), "op_") {
+		return ErrOperatorBalanceForbidden
+	}
 	if client := s.oauthEmailFlowClient(ctx); client != nil {
-		update := client.RedeemCode.UpdateOneID(code.ID).
+		update := client.RedeemCode.UpdateOneID(code.ID).Where(redeemcode.TypeNEQ(AdjustmentTypeOperatorBalance), redeemcode.Not(redeemcode.CodeHasPrefix("op_"))).
 			SetCode(code.Code).
 			SetType(code.Type).
 			SetValue(code.Value).

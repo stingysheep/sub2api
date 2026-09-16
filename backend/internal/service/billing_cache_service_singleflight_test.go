@@ -27,6 +27,18 @@ func (s *billingCacheMissStub) SetUserBalance(ctx context.Context, userID int64,
 	return nil
 }
 
+func (s *billingCacheMissStub) BeginUserBalanceFill(context.Context, int64) (string, error) {
+	return "test-lease", nil
+}
+
+func (s *billingCacheMissStub) FillUserBalance(_ context.Context, _ int64, _ float64, lease string) error {
+	if lease != "test-lease" {
+		return errors.New("unexpected fill lease")
+	}
+	s.setBalanceCalls.Add(1)
+	return nil
+}
+
 func (s *billingCacheMissStub) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {
 	return nil
 }
@@ -164,4 +176,41 @@ func TestBillingCacheServiceGetUserBalance_Singleflight(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return cache.setBalanceCalls.Load() >= 1
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestBillingCacheServiceGetUserBalance_LegacyCacheDoesNotFill(t *testing.T) {
+	cache := &billingCacheMissStub{}
+	// Expose only the original interface, as older cache implementations do.
+	legacy := struct{ BillingCache }{cache}
+	repo := &balanceLoadUserRepoStub{balance: 12.34}
+	svc := NewBillingCacheService(legacy, repo, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(svc.Stop)
+	balance, err := svc.GetUserBalance(context.Background(), 99)
+	require.NoError(t, err)
+	require.Equal(t, 12.34, balance)
+	svc.Stop()
+	require.Zero(t, cache.setBalanceCalls.Load(), "legacy caches must not receive unsafe cache-aside SETs")
+}
+
+type deniedBalanceFillCache struct {
+	billingCacheMissStub
+	err error
+}
+
+func (c *deniedBalanceFillCache) BeginUserBalanceFill(context.Context, int64) (string, error) {
+	return "", c.err
+}
+
+func TestBillingCacheServiceGetUserBalance_NoLeaseDoesNotFill(t *testing.T) {
+	for _, cacheErr := range []error{nil, errors.New("redis unavailable")} {
+		cache := &deniedBalanceFillCache{err: cacheErr}
+		repo := &balanceLoadUserRepoStub{balance: 12.34}
+		svc := NewBillingCacheService(cache, repo, nil, nil, nil, nil, &config.Config{}, nil)
+		t.Cleanup(svc.Stop)
+		balance, err := svc.GetUserBalance(context.Background(), 99)
+		require.NoError(t, err)
+		require.Equal(t, 12.34, balance)
+		svc.Stop()
+		require.Zero(t, cache.setBalanceCalls.Load())
+	}
 }

@@ -918,14 +918,13 @@ func (h *GroupHandler) GetStats(c *gin.Context) {
 		return
 	}
 
-	// Return mock data for now
-	response.Success(c, gin.H{
-		"total_api_keys":  0,
-		"active_api_keys": 0,
-		"total_requests":  0,
-		"total_cost":      0.0,
-	})
-	_ = groupID // TODO: implement actual stats
+	if groupID <= 0 {
+		response.BadRequest(c, "Invalid group ID")
+		return
+	}
+	// This legacy endpoint has no implemented statistics contract. Never present
+	// fabricated zero values as measured group usage; use usage-summary instead.
+	response.ErrorWithDetails(c, 501, "Group statistics are not supported; use usage-summary", "GROUP_STATS_UNSUPPORTED", nil)
 }
 
 // GetUsageSummary returns today's, yesterday's, and cumulative cost for all groups.

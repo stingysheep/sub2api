@@ -80,7 +80,7 @@ func newGeminiNativeTestContext(t *testing.T) (*gin.Context, *httptest.ResponseR
 }
 
 func TestGeminiForwardNative_PoolModeSkipped400PassthroughRealStatus(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	upstreamBody := geminiSkippedTestUpstreamBody()
 	svc, _ := newGeminiSkippedWriteService(http.StatusBadRequest, upstreamBody)
 	c, rec := newGeminiNativeTestContext(t)
@@ -98,7 +98,7 @@ func TestGeminiForwardNative_PoolModeSkipped400PassthroughRealStatus(t *testing.
 }
 
 func TestGeminiForwardNative_PoolModeSkipped503Failover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	svc, _ := newGeminiSkippedWriteService(http.StatusServiceUnavailable, `{"error":{"message":"Upstream service temporarily unavailable"}}`)
 	c, rec := newGeminiNativeTestContext(t)
 
@@ -113,7 +113,7 @@ func TestGeminiForwardNative_PoolModeSkipped503Failover(t *testing.T) {
 }
 
 func TestGeminiForwardNative_CustomCodesMiss400HiddenAs500(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	svc, _ := newGeminiSkippedWriteService(http.StatusBadRequest, geminiSkippedTestUpstreamBody())
 	c, rec := newGeminiNativeTestContext(t)
 
@@ -134,7 +134,7 @@ func TestGeminiForwardNative_CustomCodesMiss400HiddenAs500(t *testing.T) {
 }
 
 func TestGeminiForwardNative_CustomCodesMiss500Failover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	svc, _ := newGeminiSkippedWriteService(http.StatusInternalServerError, `{"error":{"message":"internal"}}`)
 	c, rec := newGeminiNativeTestContext(t)
 
@@ -150,7 +150,7 @@ func TestGeminiForwardNative_CustomCodesMiss500Failover(t *testing.T) {
 }
 
 func TestGeminiForwardAsChatCompletions_CustomCodesMiss400HiddenAs500(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	svc, _ := newGeminiSkippedWriteService(http.StatusBadRequest, geminiSkippedTestUpstreamBody())
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -173,7 +173,7 @@ func TestGeminiForwardAsChatCompletions_CustomCodesMiss400HiddenAs500(t *testing
 }
 
 func TestGeminiForwardAsChatCompletions_PoolMode400KeepsUpstreamMessage(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	svc, _ := newGeminiSkippedWriteService(http.StatusBadRequest, geminiSkippedTestUpstreamBody())
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -195,7 +195,7 @@ func TestGeminiForwardAsChatCompletions_PoolMode400KeepsUpstreamMessage(t *testi
 }
 
 func TestWriteGeminiMappedError_400KeepsUpstreamMessage(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	svc := &GeminiMessagesCompatService{cfg: &config.Config{}}
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

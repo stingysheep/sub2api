@@ -31,6 +31,20 @@ Thumbs.db
 dist/
 build/
 
+# Local-only development state and release archives. Keep docs/legal below
+# explicitly included because the frontend compliance gate imports it.
+/.local/
+/.tmp-go/
+/.tmp-go27/
+/.cache/
+/work/
+/notes/
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.tar.bz2
+
 # Node modules (will be installed in container)
 frontend/node_modules/
 node_modules/

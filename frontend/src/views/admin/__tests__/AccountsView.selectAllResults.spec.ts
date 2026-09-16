@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountsView from '../AccountsView.vue'
+import { adminAPI } from '@/api/admin'
 
 const {
   listAccounts,
@@ -40,7 +41,8 @@ vi.mock('@/api/admin', () => ({
     },
     groups: {
       getAll: getAllGroups
-    }
+    },
+    settings: { getUpstreamProviderProfiles: vi.fn().mockResolvedValue([]) }
   }
 }))
 
@@ -96,7 +98,7 @@ const AccountBulkActionsBarStub = {
 }
 
 const AccountTableFiltersStub = {
-  emits: ['change'],
+  emits: ['change', 'update:searchQuery', 'update:filters'],
   template: '<button data-test="change-filter" @click="$emit(\'change\')">change filter</button>'
 }
 
@@ -115,6 +117,7 @@ const mountView = () => mount(AccountsView, {
       ConfirmDialog: true,
       AccountTableActions: { template: '<div><slot name="beforeCreate" /><slot name="after" /></div>' },
       AccountTableFilters: AccountTableFiltersStub,
+      UpstreamProviderProfilesPanel: true,
       AccountBulkActionsBar: AccountBulkActionsBarStub,
       AccountActionMenu: true,
       ImportDataModal: true,
@@ -161,10 +164,46 @@ describe('admin AccountsView select all filtered results', () => {
     getUpstreamBillingProbeSettings.mockResolvedValue({ enabled: true, interval_minutes: 30 })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
+    vi.mocked(adminAPI.settings.getUpstreamProviderProfiles).mockResolvedValue([])
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
+  })
+
+  it.each(['search', 'status'])('refreshes category rows and select-all after %s changes', async (field) => {
+    vi.useFakeTimers()
+    vi.mocked(adminAPI.settings.getUpstreamProviderProfiles).mockResolvedValueOnce([
+      { id: 7, name: 'Provider', sort_order: 0 } as never
+    ])
+    const rows = makeAccounts(2).map(row => ({ ...row, upstream_provider_profile_id: 7 }))
+    listAccounts.mockImplementation(async (_page, _size, filters) => ({
+      items: filters.search || filters.status ? [rows[1]] : rows,
+      total: filters.search || filters.status ? 1 : 2, pages: 1
+    }))
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      const panel = wrapper.findComponent({ name: 'UpstreamProviderProfilesPanel' })
+      panel.vm.$emit('select', 7)
+      await flushPromises()
+      const filters = wrapper.getComponent(AccountTableFiltersStub)
+      if (field === 'search') filters.vm.$emit('update:searchQuery', 'account-2')
+      else {
+        filters.vm.$emit('update:filters', { status: 'active' })
+        filters.vm.$emit('change')
+      }
+      await vi.advanceTimersByTimeAsync(350)
+      await flushPromises()
+      expect(wrapper.findAll('[data-test="data-table"] input')).toHaveLength(1)
+      expect(panel.props('profileAccounts').map((row: { id: number }) => row.id)).toEqual([2])
+      await wrapper.get('[data-test="select-all-results"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.getComponent(AccountBulkActionsBarStub).props('selectedIds')).toEqual([2])
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it.each([
@@ -193,6 +232,56 @@ describe('admin AccountsView select all filtered results', () => {
       expect(batchRefresh).toHaveBeenLastCalledWith(expectedIds)
     }
     wrapper.unmount()
+  })
+
+  it('does not start a pending debounced reload after unmount', async () => {
+    vi.useFakeTimers()
+    vi.mocked(adminAPI.settings.getUpstreamProviderProfiles).mockResolvedValueOnce([
+      { id: 7, name: 'Provider', sort_order: 0 } as never
+    ])
+    const rows = makeAccounts(2).map(row => ({ ...row, upstream_provider_profile_id: 7 }))
+    listAccounts.mockResolvedValue({ items: rows, total: 2, pages: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(listAccounts).toHaveBeenCalledTimes(2)
+    wrapper.getComponent(AccountTableFiltersStub).vm.$emit('update:searchQuery', 'account-2')
+    wrapper.unmount()
+    listAccounts.mockClear()
+    getBatchTodayStats.mockClear()
+    await vi.advanceTimersByTimeAsync(350)
+    await flushPromises()
+    expect(listAccounts).not.toHaveBeenCalled()
+    expect(getBatchTodayStats).not.toHaveBeenCalled()
+  })
+
+  it('invalidates an in-flight profile result immediately, before the next debounced load', async () => {
+    vi.useFakeTimers()
+    vi.mocked(adminAPI.settings.getUpstreamProviderProfiles).mockResolvedValueOnce([
+      { id: 7, name: 'Provider', sort_order: 0 } as never
+    ])
+    const rows = makeAccounts(2).map(row => ({ ...row, upstream_provider_profile_id: 7 }))
+    let resolveOld!: (value: { items: typeof rows; total: number; pages: number }) => void
+    const old = new Promise<{ items: typeof rows; total: number; pages: number }>(resolve => { resolveOld = resolve })
+    listAccounts.mockImplementation(async (_page, size, filters) => {
+      if (size === 1000 && !filters.search) return old
+      return { items: [rows[1]], total: 1, pages: 1 }
+    })
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      const panel = wrapper.findComponent({ name: 'UpstreamProviderProfilesPanel' })
+      panel.vm.$emit('select', 7)
+      wrapper.getComponent(AccountTableFiltersStub).vm.$emit('update:searchQuery', 'account-2')
+      resolveOld({ items: rows, total: 2, pages: 2 })
+      await flushPromises()
+      expect(panel.props('profileAccounts')).toEqual([])
+      expect(listAccounts.mock.calls.filter(call => call[0] === 2)).toHaveLength(0)
+      await wrapper.get('[data-test="select-all-results"]').trigger('click')
+      expect(wrapper.getComponent(AccountBulkActionsBarStub).props('selectedIds')).toEqual([])
+      await vi.advanceTimersByTimeAsync(350)
+      await flushPromises()
+      expect(panel.props('profileAccounts')).toEqual([rows[1]])
+    } finally { wrapper.unmount() }
   })
 
   it('selects all matching IDs in one commit and clears the selection when filters change', async () => {

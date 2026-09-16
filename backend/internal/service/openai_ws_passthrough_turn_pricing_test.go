@@ -61,7 +61,7 @@ func startPassthroughHookRecordingServer(
 }
 
 func TestPassthroughIngressFollowUpCallsBeforeTurnAfterBeforeRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	controlCtx, cancelControl := context.WithCancelCause(context.Background())
 	defer cancelControl(context.Canceled)
 
@@ -127,7 +127,7 @@ func TestPassthroughIngressFollowUpCallsBeforeTurnAfterBeforeRequest(t *testing.
 }
 
 func TestPassthroughIngressBeforeTurnRejectionDoesNotForwardFollowUp(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	controlCtx, cancelControl := context.WithCancelCause(context.Background())
 	defer cancelControl(context.Canceled)
 
@@ -197,7 +197,7 @@ func TestPassthroughIngressFreezesBinarySubsequentTurnBeforeRequestPolicy(t *tes
 
 func testPassthroughIngressFreezesSubsequentTurnBeforeRequestPolicy(t *testing.T, secondMessageType coderws.MessageType) {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	controlCtx, cancelControl := context.WithCancelCause(context.Background())
 	defer cancelControl(context.Canceled)
 

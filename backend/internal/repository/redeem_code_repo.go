@@ -6,6 +6,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -23,6 +24,9 @@ func NewRedeemCodeRepository(client *dbent.Client) service.RedeemCodeRepository 
 }
 
 func (r *redeemCodeRepository) Create(ctx context.Context, code *service.RedeemCode) error {
+	if reservedOperatorCode(code.Type, code.Code) {
+		return service.ErrOperatorBalanceForbidden
+	}
 	client := clientFromContext(ctx, r.client)
 	created, err := client.RedeemCode.Create().
 		SetCode(code.Code).
@@ -53,6 +57,9 @@ func (r *redeemCodeRepository) CreateBatch(ctx context.Context, codes []service.
 	builders := make([]*dbent.RedeemCodeCreate, 0, len(codes))
 	for i := range codes {
 		c := &codes[i]
+		if reservedOperatorCode(c.Type, c.Code) {
+			return service.ErrOperatorBalanceForbidden
+		}
 		b := client.RedeemCode.Create().
 			SetCode(c.Code).
 			SetType(c.Type).
@@ -104,7 +111,7 @@ func (r *redeemCodeRepository) GetByCode(ctx context.Context, code string) (*ser
 
 func (r *redeemCodeRepository) Delete(ctx context.Context, id int64) error {
 	client := clientFromContext(ctx, r.client)
-	_, err := client.RedeemCode.Delete().Where(redeemcode.IDEQ(id)).Exec(ctx)
+	_, err := client.RedeemCode.Delete().Where(redeemcode.IDEQ(id), mutableRedeemCode()).Exec(ctx)
 	return err
 }
 
@@ -207,8 +214,11 @@ func redeemCodeListOrder(params pagination.PaginationParams) []func(*entsql.Sele
 }
 
 func (r *redeemCodeRepository) Update(ctx context.Context, code *service.RedeemCode) error {
+	if reservedOperatorCode(code.Type, code.Code) {
+		return service.ErrOperatorBalanceForbidden
+	}
 	client := clientFromContext(ctx, r.client)
-	up := client.RedeemCode.UpdateOneID(code.ID).
+	up := client.RedeemCode.UpdateOneID(code.ID).Where(mutableRedeemCode()).
 		SetCode(code.Code).
 		SetType(code.Type).
 		SetValue(code.Value).
@@ -285,7 +295,7 @@ func (r *redeemCodeRepository) BatchUpdate(ctx context.Context, ids []int64, fie
 
 func (r *redeemCodeRepository) batchUpdate(ctx context.Context, client *dbent.Client, ids []int64, fields service.RedeemCodeBatchUpdateFields) (int64, error) {
 	existing, err := client.RedeemCode.Query().
-		Where(redeemcode.IDIn(ids...)).
+		Where(redeemcode.IDIn(ids...), mutableRedeemCode()).
 		All(ctx)
 	if err != nil {
 		return 0, err
@@ -301,7 +311,7 @@ func (r *redeemCodeRepository) batchUpdate(ctx context.Context, client *dbent.Cl
 		}
 	}
 
-	up := client.RedeemCode.Update().Where(redeemcode.IDIn(ids...))
+	up := client.RedeemCode.Update().Where(redeemcode.IDIn(ids...), mutableRedeemCode())
 	if fields.Status != nil {
 		up.SetStatus(*fields.Status)
 	}
@@ -337,7 +347,7 @@ func (r *redeemCodeRepository) Use(ctx context.Context, id, userID int64) error 
 	now := time.Now()
 	client := clientFromContext(ctx, r.client)
 	affected, err := client.RedeemCode.Update().
-		Where(redeemcode.IDEQ(id), redeemcode.StatusEQ(service.StatusUnused)).
+		Where(redeemcode.IDEQ(id), mutableRedeemCode(), redeemcode.StatusEQ(service.StatusUnused)).
 		SetStatus(service.StatusUsed).
 		SetUsedBy(userID).
 		SetUsedAt(now).
@@ -412,7 +422,7 @@ func (r *redeemCodeRepository) SumPositiveBalanceByUser(ctx context.Context, use
 		Where(
 			redeemcode.UsedByEQ(userID),
 			redeemcode.ValueGT(0),
-			redeemcode.TypeIn("balance", "admin_balance"),
+			redeemcode.TypeIn("balance", "admin_balance", service.AdjustmentTypeOperatorBalance),
 		).
 		Aggregate(dbent.As(dbent.Sum(redeemcode.FieldValue), "sum")).
 		Scan(ctx, &result)
@@ -461,4 +471,12 @@ func redeemCodeEntitiesToService(models []*dbent.RedeemCode) []service.RedeemCod
 		}
 	}
 	return out
+}
+
+// Reserved operation receipts are immutable even when submitted through generic redeem APIs.
+func reservedOperatorCode(codeType, code string) bool {
+	return codeType == service.AdjustmentTypeOperatorBalance || strings.HasPrefix(strings.ToLower(code), "op_")
+}
+func mutableRedeemCode() predicate.RedeemCode {
+	return redeemcode.And(redeemcode.TypeNEQ(service.AdjustmentTypeOperatorBalance), redeemcode.Not(redeemcode.CodeHasPrefix("op_")))
 }

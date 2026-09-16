@@ -18,7 +18,7 @@ func BackendModeUserGuard(settingService *service.SettingService) gin.HandlerFun
 			return
 		}
 		role, _ := GetUserRoleFromContext(c)
-		if role == "admin" {
+		if role == service.RoleAdmin || (role == service.RoleOperator && c.Request.Method == "GET" && c.FullPath() == "/api/v1/auth/me") {
 			c.Next()
 			return
 		}

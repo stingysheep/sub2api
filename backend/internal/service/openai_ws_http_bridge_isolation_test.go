@@ -132,7 +132,7 @@ func (u *httpBridgeIsolationUpstream) DoWithTLS(req *http.Request, proxyURL stri
 }
 
 func TestOpenAIWSHTTPBridgeSessionIsolationAcrossSameSessionHash(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cfg := &config.Config{}

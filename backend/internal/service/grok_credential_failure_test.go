@@ -246,7 +246,7 @@ func TestUpstreamFailoverErrorNextAccountActionPreservesLegacyRetry(t *testing.T
 }
 
 func TestGetRequestCredentialMapsPermanentGrokOAuthFailureAndRedactsSecrets(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	account := expiredGrokOAuthAccountForCredentialTest(701)
 	repo := &tokenRefreshAccountRepo{}
 	repo.accountsByID = map[int64]*Account{account.ID: account}
@@ -295,7 +295,7 @@ func TestGetRequestCredentialMapsPermanentGrokOAuthFailureAndRedactsSecrets(t *t
 }
 
 func TestNewGrokCredentialFailoverDoesNotAttributeInferenceProxy(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	proxyID := int64(43)
 	account := &Account{
 		ID:       701,
@@ -323,7 +323,7 @@ func TestNewGrokCredentialFailoverDoesNotAttributeInferenceProxy(t *testing.T) {
 }
 
 func TestGetRequestCredentialPermanentMappingsPersistAndInvalidate(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	tests := []struct {
 		name        string
 		prepare     func(*Account)
@@ -385,7 +385,7 @@ func TestGetRequestCredentialPermanentMappingsPersistAndInvalidate(t *testing.T)
 }
 
 func TestGetRequestCredentialMissingAccessNeverRefreshesAndPermanentlyFailsOver(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	tests := []struct {
 		name      string
 		expiresAt *time.Time
@@ -460,7 +460,7 @@ func TestGetRequestCredentialWarmCachedAccessWithMissingRefreshPermanentlyFailsO
 }
 
 func TestGetRequestCredentialMapsTransientAndProviderFailuresSeparately(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	t.Run("account transient temporarily unschedules", func(t *testing.T) {
 		account := expiredGrokOAuthAccountForCredentialTest(702)
@@ -849,7 +849,7 @@ func TestGetRequestCredentialWarmCachedAccessWithMissingConfiguredProxyPermanent
 }
 
 func TestGetRequestCredentialCancellationAndBudgetDoNotMutateAccount(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	account := expiredGrokOAuthAccountForCredentialTest(704)
 	repo := &tokenRefreshAccountRepo{}
 	repo.accountsByID = map[int64]*Account{account.ID: account}
@@ -885,7 +885,7 @@ func TestGetRequestCredentialCancellationAndBudgetDoNotMutateAccount(t *testing.
 }
 
 func TestGetRequestCredentialStateMutationFailureStopsAndKeepsRuntimeBlock(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	tests := []struct {
 		name            string
 		refreshErr      error
@@ -1055,7 +1055,7 @@ func TestGrokCredentialMutationLockWaitHonorsCredentialBudget(t *testing.T) {
 }
 
 func TestGetRequestCredentialBudgetBoundsBlockedConditionalMutation(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	account := expiredGrokOAuthAccountForCredentialTest(736)
 	baseRepo := &tokenRefreshAccountRepo{}
 	baseRepo.accountsByID = map[int64]*Account{account.ID: account}
@@ -1091,7 +1091,7 @@ func TestGetRequestCredentialBudgetBoundsBlockedConditionalMutation(t *testing.T
 }
 
 func TestGetRequestCredentialLockHeldTimeoutDoesNotQuarantineAccount(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	tests := []struct {
 		name       string
 		buildRepo  func(*Account) AccountRepository
@@ -1329,7 +1329,7 @@ func TestGrokCredentialRuntimeRollbackOwnership(t *testing.T) {
 }
 
 func TestGetRequestCredentialAPIKeyBypassesOAuthFailureMapping(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	account := &Account{
 		ID:       705,
 		Platform: PlatformGrok,
@@ -1616,7 +1616,7 @@ func TestGetRequestCredentialSharedCredentialPersistenceFailureStopsWithoutAccou
 }
 
 func TestGetRequestCredentialRecoversConcurrentRefreshWithoutFailover(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 	account := expiredGrokOAuthAccountForCredentialTest(733)
 	latest := *account
 	latest.Credentials = shallowCopyMap(account.Credentials)

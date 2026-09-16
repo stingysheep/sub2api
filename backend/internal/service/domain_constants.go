@@ -18,8 +18,9 @@ const (
 
 // Role constants
 const (
-	RoleAdmin = domain.RoleAdmin
-	RoleUser  = domain.RoleUser
+	RoleAdmin    = domain.RoleAdmin
+	RoleOperator = domain.RoleOperator
+	RoleUser     = domain.RoleUser
 )
 
 // Affiliate rebate settings
@@ -164,6 +165,7 @@ const (
 
 // Admin adjustment type constants
 const (
+	AdjustmentTypeOperatorBalance  = domain.AdjustmentTypeOperatorBalance
 	AdjustmentTypeAdminBalance     = domain.AdjustmentTypeAdminBalance     // 管理员调整余额
 	AdjustmentTypeAdminConcurrency = domain.AdjustmentTypeAdminConcurrency // 管理员调整并发数
 )

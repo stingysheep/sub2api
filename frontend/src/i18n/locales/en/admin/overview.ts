@@ -2,14 +2,20 @@ export default {
     // Dashboard
     dashboard: {
       groupConcurrency: {
-        title: 'Live group concurrency',
-        description: 'In-flight requests and Live sessions by current API key group, refreshed every 5 seconds. Includes requests waiting for upstream capacity.',
+        title: 'Live user concurrency',
+        description: 'Total concurrency and active users come from ordinary-user slots. Group and user details are observed from current API-key slots and refresh every 5 seconds.',
         showIdle: 'Show idle groups',
+        collapse: 'Collapse',
+        expand: 'Expand',
         activeGroups: '{count} active groups',
-        total: '{count} concurrent requests / sessions',
+        total: '{count} current user concurrency',
+        activeUsers: '{count} active users',
+        activeUserList: 'Active users (full email · user concurrency slots)',
+        groupActiveUsers: '{count} users',
+        userConcurrency: '{count} concurrent',
+        attribution: '{attributed}/{total} concurrent slots are attributed to groups; {unattributed} user slots are not currently attributable by API-key observations. The total still comes from user slots.',
         updatedAt: 'Updated at {time}',
         unassigned: 'Ungrouped',
-        active: 'In use',
         idle: 'Idle',
         unit: 'concurrent',
         empty: 'No groups are currently in use',
@@ -514,6 +520,7 @@ export default {
       statusFilter: 'Status Filter',
       allStatuses: 'All Status',
       admin: 'Admin',
+      operator: 'Operator',
       user: 'User',
       disabled: 'Disabled',
       email: 'Email',
@@ -715,6 +722,7 @@ export default {
       totalRecharged: 'Total Recharged',
       roles: {
         admin: 'Admin',
+        operator: 'Operator',
         user: 'User'
       },
       // Settings Dropdowns

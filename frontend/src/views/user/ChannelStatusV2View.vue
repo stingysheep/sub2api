@@ -567,6 +567,8 @@ const refreshing = ref(false)
 const expandedErrors = ref(new Set<string>())
 let controller: AbortController | null = null
 let sequence = 0
+let tabController: AbortController | null = null
+let tabSequence = 0
 let autoRefreshTimer: number | null = null
 
 const hasDimensionFilter = computed(
@@ -729,6 +731,7 @@ async function loadMetrics(signal?: AbortSignal, id = sequence) {
 }
 
 async function reload(silent = true) {
+  cancelTabRequest()
   controller?.abort()
   const request = new AbortController()
   controller = request
@@ -742,13 +745,12 @@ async function reload(silent = true) {
       loadMetrics(request.signal, id),
     ])
   } catch (error) {
-    if ((error as { name?: string }).name !== 'CanceledError') {
+    if (id === sequence && !request.signal.aborted && (error as { name?: string }).name !== 'CanceledError') {
       appStore.showError(extractApiErrorMessage(error, t('channelMonitorV2.loadFailed')))
     }
   } finally {
     if (id === sequence) {
       loading.value = false
-      tabLoading.value = false
       refreshing.value = false
     }
   }
@@ -756,6 +758,7 @@ async function reload(silent = true) {
 
 /** When only range changes, still refresh dimensions; dimension filters only re-load metrics. */
 async function reloadMetricsOnly(silent = true) {
+  cancelTabRequest()
   controller?.abort()
   const request = new AbortController()
   controller = request
@@ -765,35 +768,53 @@ async function reloadMetricsOnly(silent = true) {
   try {
     await loadMetrics(request.signal, id)
   } catch (error) {
-    if ((error as { name?: string }).name !== 'CanceledError') {
+    if (id === sequence && !request.signal.aborted && (error as { name?: string }).name !== 'CanceledError') {
       appStore.showError(extractApiErrorMessage(error, t('channelMonitorV2.loadFailed')))
     }
   } finally {
     if (id === sequence) {
       loading.value = false
-      tabLoading.value = false
       refreshing.value = false
     }
   }
 }
-async function loadTab(signal?: AbortSignal, id = sequence) {
+function cancelTabRequest() {
+  tabController?.abort()
+  tabSequence++
+  tabLoading.value = false
+}
+async function loadTab(signal = controller?.signal, id = sequence) {
+  if (signal?.aborted || id !== sequence) return
+  cancelTabRequest()
+  const request = new AbortController()
+  tabController = request
+  const tabId = tabSequence
+  const tab = activeTab.value
+  const abort = () => request.abort()
+  signal?.addEventListener('abort', abort, { once: true })
+  const isCurrent = () => id === sequence && tabId === tabSequence && !request.signal.aborted
   tabLoading.value = true
   try {
-    if (activeTab.value === 'models') {
-      modelRows.value = (await api.getModels(filter.value, isAdmin.value, signal)).items || []
-    } else if (activeTab.value === 'errors') {
-      errorRows.value = (await api.getErrors(filter.value, isAdmin.value, signal)).items || []
+    if (tab === 'models') {
+      const next = await api.getModels(filter.value, isAdmin.value, request.signal)
+      if (isCurrent()) modelRows.value = next.items || []
+    } else if (tab === 'errors') {
+      const next = await api.getErrors(filter.value, isAdmin.value, request.signal)
+      if (isCurrent()) errorRows.value = next.items || []
     } else if (showUserRanking.value) {
-      userRows.value = (await api.getUsers(filter.value, isAdmin.value, signal)).items || []
+      const next = await api.getUsers(filter.value, isAdmin.value, request.signal)
+      if (isCurrent()) userRows.value = next.items || []
     } else {
       userRows.value = []
     }
   } catch (error) {
+    if (!isCurrent()) return
     const e = error as { name?: string; code?: string }
     if (e?.name === 'AbortError' || e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     appStore.showError(extractApiErrorMessage(error, t('channelMonitorV2.detailLoadFailed')))
   } finally {
-    if (id === sequence) tabLoading.value = false
+    signal?.removeEventListener('abort', abort)
+    if (isCurrent()) tabLoading.value = false
   }
 }
 function setRange(value: MonitorRange) {
@@ -813,15 +834,25 @@ function scheduleAutoRefresh() {
     window.clearInterval(autoRefreshTimer)
     autoRefreshTimer = null
   }
+  if (document.visibilityState === 'hidden') return
   // Poll faster while first-upgrade bootstrap is filling 90m→30d so the progress bar moves.
   const seconds = bootstrapActive.value
     ? 10
     : snapshot.value?.config?.refresh_interval_seconds || 300
   autoRefreshTimer = window.setInterval(() => {
-    if (!loading.value && !refreshing.value) {
+    if (document.visibilityState !== 'hidden' && !loading.value && !refreshing.value) {
       void reload(true)
     }
   }, Math.max(bootstrapActive.value ? 10 : 60, seconds) * 1000)
+}
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    if (autoRefreshTimer) window.clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+    return
+  }
+  if (!loading.value && !refreshing.value) void reload(true)
+  else scheduleAutoRefresh()
 }
 function drillModel(row: MonitorModelRow) {
   filter.value.platforms = [row.platform]
@@ -924,8 +955,14 @@ watch(showUserRanking, (allowed) => {
     activeTab.value = 'models'
   }
 })
-onMounted(() => void reload(false))
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  void reload(false)
+})
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  sequence++
+  cancelTabRequest()
   controller?.abort()
   if (autoRefreshTimer) window.clearInterval(autoRefreshTimer)
 })

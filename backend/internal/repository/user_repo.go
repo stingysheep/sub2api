@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 
+	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 )
 
@@ -250,24 +251,34 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 	}
 
 	// 使用 ent 事务包裹用户更新与 allowed_groups 同步，避免跨层事务不一致。
-	tx, err := r.client.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
-		return err
-	}
-
 	var txClient *dbent.Client
 	txCtx := ctx
-	if err == nil {
-		defer func() { _ = tx.Rollback() }()
-		txClient = tx.Client()
-		txCtx = dbent.NewTxContext(ctx, tx)
+	var tx *dbent.Tx
+	if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+		txClient = existingTx.Client()
 	} else {
-		// 已处于外部事务中（ErrTxStarted），复用当前事务 client 并由调用方负责提交/回滚。
-		if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
-			txClient = existingTx.Client()
-		} else {
+		startedTx, err := r.client.Tx(ctx)
+		switch {
+		case errors.Is(err, dbent.ErrTxStarted):
 			txClient = r.client
+		case err != nil:
+			return err
+		default:
+			tx = startedTx
+			defer func() { _ = tx.Rollback() }()
+			txClient = tx.Client()
+			txCtx = dbent.NewTxContext(ctx, tx)
 		}
+	}
+
+	// 所有角色/状态更新与删除共享同一数据库事务锁；读取、检查和写入
+	// 必须在锁内，否则两个实例仍能同时通过最后管理员检查。
+	if fields.Role || fields.Status {
+		release, err := lockAdminUserMutations(txCtx, txClient)
+		if err != nil {
+			return err
+		}
+		defer release()
 	}
 
 	// 邮箱唯一性锁与查重只在本次确实要改邮箱时才做：不改邮箱的更新既不需要
@@ -289,11 +300,22 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 		}
 	}
 
-	existing, err := clientFromContext(txCtx, txClient).User.Get(txCtx, userIn.ID)
+	existingQuery := clientFromContext(txCtx, txClient).User.Query().Where(dbuser.IDEQ(userIn.ID))
+	if (fields.Role || fields.Status) && txClient.Driver().Dialect() == dialect.Postgres {
+		// FOR UPDATE also rejects an obsolete role/status snapshot when an external
+		// transaction uses REPEATABLE READ instead of the default READ COMMITTED.
+		existingQuery = existingQuery.ForUpdate()
+	}
+	existing, err := existingQuery.Only(txCtx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrUserNotFound, nil)
 	}
 	oldEmail := existing.Email
+	if fields.Role || fields.Status {
+		if err := ensureAdminUserUpdateAllowed(txCtx, txClient, existing, userIn, fields); err != nil {
+			return err
+		}
+	}
 
 	updateOp := txClient.User.UpdateOneID(userIn.ID)
 	if fields.Email {
@@ -367,6 +389,54 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 	}
 
 	userIn.UpdatedAt = updated.UpdatedAt
+	return nil
+}
+
+const adminUserMutationLockKey = "user-admin-membership"
+
+func lockAdminUserMutations(ctx context.Context, client *dbent.Client) (func(), error) {
+	if client.Driver().Dialect() != dialect.Postgres {
+		return repositoryScopedKeyLocks.lock(adminUserMutationLockKey), nil
+	}
+	// 不叠加进程 mutex：外层事务可能再次调用 Update，期间另一个请求
+	// 正在等待数据库锁，叠加 mutex 会阻止锁持有者继续并提交。
+	rows, err := client.QueryContext(ctx, "SELECT pg_advisory_xact_lock($1)", advisoryLockHash(adminUserMutationLockKey))
+	if err != nil {
+		return nil, fmt.Errorf("lock admin user mutations: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return func() {}, nil
+}
+
+func ensureAdminUserUpdateAllowed(ctx context.Context, client *dbent.Client, existing *dbent.User, desired *service.User, fields service.UserUpdateFields) error {
+	role, status := existing.Role, existing.Status
+	if fields.Role {
+		role = desired.Role
+	}
+	if fields.Status {
+		status = desired.Status
+	}
+	if (existing.Role == service.RoleAdmin && fields.Status && status != service.StatusActive) ||
+		(role == service.RoleAdmin && status != service.StatusActive) {
+		return errors.New("cannot disable admin user")
+	}
+	if existing.Role == service.RoleAdmin && role != service.RoleAdmin {
+		otherAdmins := client.User.Query().Where(
+			dbuser.RoleEQ(service.RoleAdmin), dbuser.StatusEQ(service.StatusActive), dbuser.IDNEQ(existing.ID),
+		)
+		if client.Driver().Dialect() == dialect.Postgres {
+			otherAdmins = otherAdmins.ForUpdate()
+		}
+		ids, err := otherAdmins.IDs(ctx)
+		if err != nil {
+			return fmt.Errorf("count admin users: %w", err)
+		}
+		if len(ids) == 0 {
+			return errors.New("cannot demote the last admin user")
+		}
+	}
 	return nil
 }
 
@@ -470,6 +540,7 @@ func (r *userRepository) Delete(ctx context.Context, id int64) error {
 	if err == nil {
 		defer func() { _ = tx.Rollback() }()
 		exec = tx.Client()
+		ctx = dbent.NewTxContext(ctx, tx)
 	}
 	// err == dbent.ErrTxStarted 时复用当前事务（exec = r.client）。
 
@@ -487,6 +558,22 @@ func (r *userRepository) Delete(ctx context.Context, id int64) error {
 
 // deleteUser 在给定 client（可能是外部事务 client）上删除用户及其身份关联记录，自身不开启/提交事务。
 func (r *userRepository) deleteUser(ctx context.Context, exec *dbent.Client, id int64) error {
+	release, err := lockAdminUserMutations(ctx, exec)
+	if err != nil {
+		return err
+	}
+	defer release()
+	currentQuery := exec.User.Query().Where(dbuser.IDEQ(id))
+	if exec.Driver().Dialect() == dialect.Postgres {
+		currentQuery = currentQuery.ForUpdate()
+	}
+	current, err := currentQuery.Only(ctx)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	if current.Role == service.RoleAdmin {
+		return errors.New("cannot delete admin user")
+	}
 	identityIDs, err := exec.AuthIdentity.Query().
 		Where(authidentity.UserIDEQ(id)).
 		IDs(ctx)

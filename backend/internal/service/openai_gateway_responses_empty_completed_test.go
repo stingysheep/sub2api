@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +18,7 @@ import (
 // turned into a failover error instead of a successful empty reply (issue
 // #5009).
 func TestOpenAIResponsesEmptyCompletedFailsOver(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
@@ -51,7 +50,7 @@ func TestOpenAIResponsesEmptyCompletedFailsOver(t *testing.T) {
 // TestOpenAIResponsesEmptyCompletedWithOutputSucceeds ensures streams with real
 // semantic output are untouched.
 func TestOpenAIResponsesEmptyCompletedWithOutputSucceeds(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
@@ -85,7 +84,7 @@ func TestOpenAIResponsesEmptyCompletedWithOutputSucceeds(t *testing.T) {
 // TestOpenAIResponsesEmptyCompletedWithUsageSucceeds ensures a completed event
 // carrying usage is not mistaken for a silent refusal even without output.
 func TestOpenAIResponsesEmptyCompletedWithUsageSucceeds(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	setGinTestMode()
 
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,

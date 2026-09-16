@@ -5,6 +5,7 @@ package service
 import (
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -123,6 +124,38 @@ func TestGetHeaderOverrides(t *testing.T) {
 		},
 	})
 	require.Equal(t, map[string]string{"x-ok": "ok"}, defensive.GetHeaderOverrides())
+}
+
+func TestAccountHotPathCachesAreSafeForConcurrentReads(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"model_mapping":              map[string]any{"gpt-requested": "gpt-upstream"},
+			credKeyHeaderOverrideEnabled: true,
+			credKeyHeaderOverrides:       map[string]any{"x-route": "stable"},
+		},
+	}
+
+	const readers = 32
+	var wg sync.WaitGroup
+	wg.Add(readers)
+	for range readers {
+		go func() {
+			defer wg.Done()
+			for range 100 {
+				if got := account.GetMappedModel("gpt-requested"); got != "gpt-upstream" {
+					t.Errorf("GetMappedModel() = %q, want %q", got, "gpt-upstream")
+					return
+				}
+				if got := account.GetHeaderOverrides()["x-route"]; got != "stable" {
+					t.Errorf("GetHeaderOverrides()[x-route] = %q, want %q", got, "stable")
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestApplyHeaderOverrides(t *testing.T) {
