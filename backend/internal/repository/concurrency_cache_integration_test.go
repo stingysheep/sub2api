@@ -489,10 +489,12 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots() {
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), []string{"keep-2"}, userMembers)
 
-	// API Key 槽位（stats-only）不在启动清理范围内，靠分数裁剪与 key TTL 自愈。
+	// API Key 统计槽位也必须清理旧进程成员，否则发布重启后会短暂虚高。
 	apiKeyMembers, err := s.rdb.ZRange(s.ctx, apiKeyKey, 0, -1).Result()
 	require.NoError(s.T(), err)
-	require.ElementsMatch(s.T(), []string{"keep-3", "oldproc-3"}, apiKeyMembers)
+	require.Equal(s.T(), []string{"keep-3"}, apiKeyMembers)
+	_, err = s.rdb.ZScore(s.ctx, apiKeyActiveIndexKey, strconv.FormatInt(apiKeyID, 10)).Result()
+	require.NoError(s.T(), err, "surviving API key slots should be indexed")
 
 	_, err = s.rdb.Get(s.ctx, userWaitKey).Result()
 	require.True(s.T(), errors.Is(err, redis.Nil))

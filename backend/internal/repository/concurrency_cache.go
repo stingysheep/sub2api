@@ -50,6 +50,7 @@ const (
 	// member 是账号/用户 ID，score 是“预计仍需关注到”的 Redis Unix 秒时间戳。
 	accountActiveIndexKey = "concurrency:account:active_index" // ZSET member=accountID, score=expireAtUnixSeconds
 	userActiveIndexKey    = "concurrency:user:active_index"    // ZSET member=userID, score=expireAtUnixSeconds
+	apiKeyActiveIndexKey  = "concurrency:api_key:active_index" // ZSET member=apiKeyID, score=expireAtUnixSeconds
 
 	// 后台清理只按批处理索引候选，避免单次任务占用 Redis 太久。
 	activeIndexCleanupBatchSize  = 1000
@@ -57,7 +58,8 @@ const (
 
 	// 一次性迁移 marker：活跃索引机制上线前遗留的等待计数键无法被索引发现，
 	// 且有流量时 TTL 会被不断刷新，必须清扫一次。marker 存在即代表已完成。
-	legacyWaitSweepMarkerKey = "concurrency:startup:legacy_wait_sweep:v1"
+	legacyWaitSweepMarkerKey   = "concurrency:startup:legacy_wait_sweep:v1"
+	legacyAPIKeySweepMarkerKey = "concurrency:startup:legacy_api_key_sweep:v1"
 )
 
 var (
@@ -199,7 +201,7 @@ var (
 		redis.call('ZREMRANGEBYSCORE', key, '-inf', expireBefore)
 		redis.call('ZADD', key, now, requestID)
 		redis.call('EXPIRE', key, ttl)
-		return 1
+		return {1, now}
 	`)
 
 	// acquireOpenAIWSIngressLeaseScript atomically reaps crashed members and
@@ -457,6 +459,33 @@ func (c *concurrencyCache) refreshAccountActiveIndex(ctx context.Context, accoun
 
 func (c *concurrencyCache) refreshUserActiveIndex(ctx context.Context, userID int64) {
 	c.refreshActiveIndex(ctx, userActiveIndexKey, userID, userSlotKey(userID), waitQueueKey(userID))
+}
+
+func (c *concurrencyCache) refreshAPIKeyActiveIndex(ctx context.Context, apiKeyID int64) {
+	if c == nil || c.rdb == nil || apiKeyID <= 0 {
+		return
+	}
+	key := apiKeySlotKey(apiKeyID)
+	now, err := c.redisUnixSeconds(ctx)
+	if err != nil {
+		logger.LegacyPrintf("repository.concurrency", "Warning: refresh API key active index for %d failed: %v", apiKeyID, err)
+		return
+	}
+	if err := c.rdb.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now-int64(c.slotTTLSeconds), 10)).Err(); err != nil {
+		logger.LegacyPrintf("repository.concurrency", "Warning: trim API key slots for %d failed: %v", apiKeyID, err)
+		return
+	}
+	count, err := c.rdb.ZCard(ctx, key).Result()
+	if err != nil {
+		logger.LegacyPrintf("repository.concurrency", "Warning: count API key slots for %d failed: %v", apiKeyID, err)
+		return
+	}
+	member := strconv.FormatInt(apiKeyID, 10)
+	if count == 0 {
+		c.removeActiveIndexMembers(ctx, apiKeyActiveIndexKey, []string{member})
+		return
+	}
+	c.touchActiveIndexAt(ctx, apiKeyActiveIndexKey, apiKeyID, now+int64(c.slotTTLSeconds))
 }
 
 // refreshActiveIndex 以 Redis 中的真实槽位/等待数为准重建索引状态。
@@ -741,13 +770,20 @@ func (c *concurrencyCache) GetUserConcurrency(ctx context.Context, userID int64)
 
 func (c *concurrencyCache) TrackAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error {
 	key := apiKeySlotKey(apiKeyID)
-	_, err := trackSlotScript.Run(ctx, c.rdb, []string{key}, c.slotTTLSeconds, requestID).Result()
+	_, now, err := runScriptInt64Pair(ctx, c.rdb, trackSlotScript, []string{key}, c.slotTTLSeconds, requestID)
+	if err == nil {
+		c.touchActiveIndexAt(ctx, apiKeyActiveIndexKey, apiKeyID, now+int64(c.slotTTLSeconds))
+	}
 	return err
 }
 
 func (c *concurrencyCache) ReleaseAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error {
 	key := apiKeySlotKey(apiKeyID)
-	return c.rdb.ZRem(ctx, key, requestID).Err()
+	if err := c.rdb.ZRem(ctx, key, requestID).Err(); err != nil {
+		return err
+	}
+	c.refreshAPIKeyActiveIndex(ctx, apiKeyID)
+	return nil
 }
 
 func (c *concurrencyCache) AcquireOpenAIWSIngressLease(ctx context.Context, apiKeyID int64, maxConnections int, leaseID string) (bool, error) {
@@ -1141,8 +1177,6 @@ func (c *concurrencyCache) reconcileExpiredIndexCandidates(ctx context.Context, 
 // CleanupStaleProcessSlots 启动时清理非当前进程前缀的槽位。
 // 清理范围来自活跃索引（含 score 已过期的成员——它们往往正是崩溃进程留下的残留），
 // 避免在 Redis 上 SCAN 全部 concurrency:* 键；另有一次性迁移清扫兜底索引机制上线前的遗留等待计数。
-// API Key 槽位（concurrency:api_key:*）是 stats-only 数据：每次 Track/读取都会按分数
-// 裁剪过期成员，key 自带 TTL，可在一个 slot TTL 内自愈，因此不参与启动清理。
 func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeRequestPrefix string) error {
 	if activeRequestPrefix == "" {
 		return nil
@@ -1152,6 +1186,9 @@ func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeR
 	}
 	now, err := c.redisUnixSeconds(ctx)
 	if err != nil {
+		return err
+	}
+	if err := c.sweepLegacyAPIKeySlotsOnce(ctx, activeRequestPrefix, now); err != nil {
 		return err
 	}
 
@@ -1167,7 +1204,83 @@ func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeR
 	if err != nil {
 		return err
 	}
-	return c.cleanupStaleProcessSlotsForIndex(ctx, userSlotIndex, userMembers, activeRequestPrefix, now)
+	if err := c.cleanupStaleProcessSlotsForIndex(ctx, userSlotIndex, userMembers, activeRequestPrefix, now); err != nil {
+		return err
+	}
+
+	apiKeyMembers, err := c.allIndexMembers(ctx, apiKeyActiveIndexKey)
+	if err != nil {
+		return err
+	}
+	return c.cleanupStaleAPIKeySlots(ctx, apiKeyMembers, activeRequestPrefix, now)
+}
+
+// sweepLegacyAPIKeySlotsOnce migrates API key slot keys created before the active index existed.
+// It scans only the API key namespace once, removes dead-process members and indexes survivors.
+func (c *concurrencyCache) sweepLegacyAPIKeySlotsOnce(ctx context.Context, activeRequestPrefix string, now int64) error {
+	exists, err := c.rdb.Exists(ctx, legacyAPIKeySweepMarkerKey).Result()
+	if err != nil {
+		return fmt.Errorf("check legacy API key sweep marker: %w", err)
+	}
+	if exists > 0 {
+		return nil
+	}
+	var cursor uint64
+	for {
+		keys, next, err := c.rdb.Scan(ctx, cursor, apiKeySlotKeyPrefix+"*", 200).Result()
+		if err != nil {
+			return fmt.Errorf("scan legacy API key slots: %w", err)
+		}
+		for _, key := range keys {
+			id, err := strconv.ParseInt(key[len(apiKeySlotKeyPrefix):], 10, 64)
+			if err != nil || id <= 0 {
+				continue
+			}
+			_, remaining, err := runScriptInt64Pair(ctx, c.rdb, startupCleanupSlotScript, []string{key}, activeRequestPrefix, c.slotTTLSeconds)
+			if err != nil {
+				return fmt.Errorf("cleanup legacy API key slots %s: %w", key, err)
+			}
+			if remaining > 0 {
+				c.touchActiveIndexAt(ctx, apiKeyActiveIndexKey, id, now+int64(c.slotTTLSeconds))
+			}
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+	if err := c.rdb.Set(ctx, legacyAPIKeySweepMarkerKey, "1", 0).Err(); err != nil {
+		return fmt.Errorf("set legacy API key sweep marker: %w", err)
+	}
+	return nil
+}
+
+func (c *concurrencyCache) cleanupStaleAPIKeySlots(ctx context.Context, members []string, activeRequestPrefix string, now int64) error {
+	staleMembers := make([]string, 0)
+	refreshed := make([]redis.Z, 0)
+	for _, member := range members {
+		id, err := strconv.ParseInt(member, 10, 64)
+		if err != nil || id <= 0 {
+			staleMembers = append(staleMembers, member)
+			continue
+		}
+		_, remaining, err := runScriptInt64Pair(ctx, c.rdb, startupCleanupSlotScript, []string{apiKeySlotKey(id)}, activeRequestPrefix, c.slotTTLSeconds)
+		if err != nil {
+			return fmt.Errorf("cleanup stale API key slots %s: %w", apiKeySlotKey(id), err)
+		}
+		if remaining > 0 {
+			refreshed = append(refreshed, redis.Z{Score: float64(now + int64(c.slotTTLSeconds)), Member: member})
+		} else {
+			staleMembers = append(staleMembers, member)
+		}
+	}
+	if len(refreshed) > 0 {
+		if err := c.rdb.ZAdd(ctx, apiKeyActiveIndexKey, refreshed...).Err(); err != nil {
+			logger.LegacyPrintf("repository.concurrency", "Warning: refresh %d API key active index members failed: %v", len(refreshed), err)
+		}
+	}
+	c.removeActiveIndexMembers(ctx, apiKeyActiveIndexKey, staleMembers)
+	return nil
 }
 
 // sweepLegacyWaitKeysOnce 一次性清扫活跃索引机制上线前遗留的等待计数键。
