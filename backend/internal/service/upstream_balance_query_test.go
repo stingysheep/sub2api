@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -22,6 +24,44 @@ type upstreamBalanceSnapshotRepoStub struct {
 	AccountRepository
 	accountID int64
 	updates   map[string]any
+}
+
+type blockingUpstreamBalanceHTTPStub struct {
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	calls   int
+}
+
+type cancelAwareUpstreamBalanceHTTPStub struct {
+	entered  chan struct{}
+	canceled chan struct{}
+	once     sync.Once
+}
+
+func (s *cancelAwareUpstreamBalanceHTTPStub) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	return s.DoWithTLS(req, proxyURL, accountID, accountConcurrency, nil)
+}
+
+func (s *cancelAwareUpstreamBalanceHTTPStub) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	s.once.Do(func() { close(s.entered) })
+	<-req.Context().Done()
+	close(s.canceled)
+	return nil, req.Context().Err()
+}
+
+func (s *blockingUpstreamBalanceHTTPStub) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	return s.DoWithTLS(req, proxyURL, accountID, accountConcurrency, nil)
+}
+
+func (s *blockingUpstreamBalanceHTTPStub) DoWithTLS(_ *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	s.mu.Lock()
+	s.calls++
+	s.mu.Unlock()
+	s.once.Do(func() { close(s.entered) })
+	<-s.release
+	return upstreamBalanceResponse(http.StatusOK, `{"data":{"balance":"4.25","currency":"USD"}}`), nil
 }
 
 func (s *upstreamBalanceSnapshotRepoStub) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
@@ -58,6 +98,54 @@ func upstreamBalanceTestAccount(baseURL string) *Account {
 	return &Account{ID: 73, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 2, Credentials: map[string]any{
 		"base_url": baseURL, "api_key": "do-not-return-this-key",
 	}}
+}
+
+func TestQueryUpstreamBalanceCoalescesConcurrentAccountRequests(t *testing.T) {
+	upstream := &blockingUpstreamBalanceHTTPStub{entered: make(chan struct{}), release: make(chan struct{})}
+	service := newUpstreamBalanceTestService(upstream)
+	account := upstreamBalanceTestAccount("https://relay.example/v1")
+	start := make(chan struct{})
+	results := make(chan *UpstreamBalanceQueryResult, 2)
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			result, err := service.QueryUpstreamBalance(context.Background(), account)
+			results <- result
+			errs <- err
+		}()
+	}
+	close(start)
+	<-upstream.entered
+	time.Sleep(20 * time.Millisecond)
+	close(upstream.release)
+
+	for range 2 {
+		require.NoError(t, <-errs)
+		require.Equal(t, 4.25, *(<-results).Entries[0].Remaining)
+	}
+	upstream.mu.Lock()
+	defer upstream.mu.Unlock()
+	require.Equal(t, 1, upstream.calls)
+}
+
+func TestQueryUpstreamBalanceCancelsOutboundRequest(t *testing.T) {
+	upstream := &cancelAwareUpstreamBalanceHTTPStub{entered: make(chan struct{}), canceled: make(chan struct{})}
+	service := newUpstreamBalanceTestService(upstream)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.QueryUpstreamBalance(ctx, upstreamBalanceTestAccount("https://relay.example/v1"))
+		done <- err
+	}()
+	<-upstream.entered
+	cancel()
+	require.ErrorIs(t, <-done, context.Canceled)
+	select {
+	case <-upstream.canceled:
+	case <-time.After(time.Second):
+		t.Fatal("outbound balance request was not canceled")
+	}
 }
 
 func TestQueryUpstreamBalanceCCSwitchUsageResponse(t *testing.T) {

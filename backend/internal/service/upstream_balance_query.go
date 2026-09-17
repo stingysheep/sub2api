@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"golang.org/x/sync/singleflight"
 )
 
 // UpstreamBalanceEntry is one plan, quota, or wallet value reported by an upstream.
@@ -47,7 +48,10 @@ const (
 	upstreamBalanceSnapshotVersion  = 1
 )
 
-var errUpstreamBalanceUnavailable = errors.New("upstream balance query is unavailable")
+var (
+	errUpstreamBalanceUnavailable = errors.New("upstream balance query is unavailable")
+	upstreamBalanceQueryGroup     singleflight.Group
+)
 
 type upstreamBalanceCandidate struct {
 	provider string
@@ -85,6 +89,25 @@ func (s *AccountTestService) QueryUpstreamBalance(ctx context.Context, account *
 	if account == nil || (account.Type != AccountTypeAPIKey && account.Type != AccountTypeUpstream) {
 		return nil, errors.New("account is not an API key or upstream account")
 	}
+	resultCh := upstreamBalanceQueryGroup.DoChan(fmt.Sprintf("%p:%s", s, strconv.FormatInt(account.ID, 10)), func() (any, error) {
+		return s.queryUpstreamBalance(ctx, account)
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case shared := <-resultCh:
+		if shared.Err != nil {
+			return nil, shared.Err
+		}
+		result, ok := shared.Val.(*UpstreamBalanceQueryResult)
+		if !ok {
+			return nil, errUpstreamBalanceUnavailable
+		}
+		return result, nil
+	}
+}
+
+func (s *AccountTestService) queryUpstreamBalance(ctx context.Context, account *Account) (*UpstreamBalanceQueryResult, error) {
 	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
 	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
 	if apiKey == "" {
@@ -141,7 +164,7 @@ func (s *AccountTestService) QueryUpstreamBalance(ctx context.Context, account *
 // Authentication failures, schema mismatches, URLs, credentials, raw response bodies,
 // and upstream-provided error text never enter the snapshot.
 func persistUpstreamBalanceSnapshot(ctx context.Context, store upstreamBalanceSnapshotStore, account *Account, result *UpstreamBalanceQueryResult) {
-	if store == nil || account == nil || result == nil || result.StatusCode < 200 || result.StatusCode >= 300 {
+	if store == nil || account == nil || !hasPersistableUpstreamBalanceResult(result) {
 		return
 	}
 	entries := make([]upstreamBalanceSnapshotEntry, 0, len(result.Entries))
@@ -173,6 +196,33 @@ func persistUpstreamBalanceSnapshot(ctx context.Context, store upstreamBalanceSn
 	if err := store.UpdateExtra(persistCtx, account.ID, map[string]any{upstreamBalanceSnapshotExtraKey: snapshot}); err != nil {
 		slog.Warn("upstream_balance_snapshot_persist_failed", "account_id", account.ID, "provider", snapshot.Provider)
 	}
+}
+
+func hasPersistableUpstreamBalanceResult(result *UpstreamBalanceQueryResult) bool {
+	if result == nil || result.StatusCode < 200 || result.StatusCode >= 300 {
+		return false
+	}
+	for _, entry := range result.Entries {
+		if entry.Remaining != nil || entry.Total != nil || entry.Used != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func upstreamBalanceSnapshotFetchedAt(extra map[string]any) time.Time {
+	if extra == nil || extra[upstreamBalanceSnapshotExtraKey] == nil {
+		return time.Time{}
+	}
+	encoded, err := json.Marshal(extra[upstreamBalanceSnapshotExtraKey])
+	if err != nil {
+		return time.Time{}
+	}
+	var snapshot upstreamBalanceSnapshot
+	if err := json.Unmarshal(encoded, &snapshot); err != nil || snapshot.SchemaVersion != upstreamBalanceSnapshotVersion {
+		return time.Time{}
+	}
+	return snapshot.FetchedAt.UTC()
 }
 
 func (s *AccountTestService) queryUpstreamBalanceCandidate(

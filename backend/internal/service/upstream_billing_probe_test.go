@@ -147,6 +147,21 @@ func (r *upstreamBillingProbeAccountRepo) FindByExtraField(_ context.Context, ke
 	return result, nil
 }
 
+func (r *upstreamBillingProbeAccountRepo) ListActive(_ context.Context) ([]Account, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := make([]Account, 0, len(r.accounts))
+	for _, account := range r.accounts {
+		if account.IsActive() {
+			clone := *account
+			clone.Credentials = mergeMap(nil, account.Credentials)
+			clone.Extra = mergeMap(nil, account.Extra)
+			result = append(result, clone)
+		}
+	}
+	return result, nil
+}
+
 type upstreamBillingProbeSettingRepo struct {
 	SettingRepository
 	mu     sync.Mutex

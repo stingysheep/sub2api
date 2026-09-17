@@ -65,9 +65,11 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 }
 
 var schedulerNeutralExtraKeys = map[string]struct{}{
-	"codex_usage_updated_at":     {},
-	"grok_billing_snapshot":      {},
-	"session_window_utilization": {},
+	"codex_usage_updated_at":        {},
+	"grok_billing_snapshot":         {},
+	"session_window_utilization":    {},
+	"upstream_balance_snapshot":     {},
+	"upstream_balance_attempted_at": {},
 }
 
 const postgresParameterBatchSize = 50000
