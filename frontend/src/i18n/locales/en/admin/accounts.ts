@@ -377,6 +377,23 @@ export default {
         batchCompleted: 'Probed {count} account(s)',
         batchPartial: 'Probe partially completed: {success} succeeded, {failed} failed'
       },
+      upstreamBalance: {
+        action: 'Upstream Balance',
+        title: 'Upstream Channel Balance',
+        description: 'The server uses the saved credential for this query; the browser never receives the key.',
+        provider: 'Provider',
+        fetchedAt: 'Fetched',
+        statusCode: 'Upstream status',
+        refresh: 'Refresh balance',
+        loading: 'Querying upstream balance…',
+        empty: 'The upstream did not return any displayable balance entries.',
+        unnamedPlan: 'Default plan',
+        remaining: 'Remaining',
+        total: 'Total',
+        used: 'Used',
+        invalid: 'Unavailable',
+        queryFailed: 'Failed to query upstream balance'
+      },
       allPrivacyModes: 'All Privacy States',
       privacyUnset: 'Unset',
       privacyTrainingOff: 'Training data sharing disabled',

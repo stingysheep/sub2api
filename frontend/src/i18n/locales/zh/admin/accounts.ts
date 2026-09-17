@@ -253,6 +253,23 @@ export default {
         batchCompleted: '已完成 {count} 个账号的倍率探测',
         batchPartial: '倍率探测部分完成：成功 {success} 个，失败 {failed} 个'
       },
+      upstreamBalance: {
+        action: '上游余额',
+        title: '上游渠道余额',
+        description: '仅由服务端使用已保存的凭据查询，浏览器不会接收密钥。',
+        provider: '供应商',
+        fetchedAt: '查询时间',
+        statusCode: '上游状态',
+        refresh: '刷新余额',
+        loading: '正在查询上游余额…',
+        empty: '上游未返回可展示的余额项目。',
+        unnamedPlan: '默认套餐',
+        remaining: '剩余',
+        total: '总额',
+        used: '已用',
+        invalid: '不可用',
+        queryFailed: '查询上游余额失败'
+      },
       allPrivacyModes: '全部Privacy状态',
       privacyUnset: '未设置',
       privacyTrainingOff: '已关闭训练数据共享',

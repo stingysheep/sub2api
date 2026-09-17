@@ -80,6 +80,23 @@ export interface AccountUpstreamBillingRatesWithEtagResult {
   data: UpstreamBillingRatesResponse | null
 }
 
+export interface UpstreamBalanceEntry {
+  plan_name?: string
+  remaining?: number | null
+  total?: number | null
+  used?: number | null
+  unit?: string
+  is_valid?: boolean
+  invalid_message?: string
+}
+
+export interface UpstreamBalanceResult {
+  provider?: string
+  entries?: UpstreamBalanceEntry[]
+  fetched_at?: string
+  status_code?: number
+}
+
 export async function getUpstreamBillingRatesWithEtag(
   page: number = 1,
   pageSize: number = 20,
@@ -1088,6 +1105,12 @@ export async function probeUpstreamBillingBatch(accountIds: number[]): Promise<U
   return data.results
 }
 
+/** Query the selected account's upstream balance without exposing its credential to the browser. */
+export async function getUpstreamBalance(id: number): Promise<UpstreamBalanceResult> {
+  const { data } = await apiClient.post<UpstreamBalanceResult>(`/admin/accounts/${id}/upstream-balance`)
+  return data
+}
+
 export async function getOllamaCloudUsageSettings(): Promise<OllamaCloudUsageSettings> {
   const { data } = await apiClient.get<OllamaCloudUsageSettings>('/admin/accounts/ollama-cloud-usage/settings')
   return data
@@ -1194,6 +1217,7 @@ export const accountsAPI = {
   setUpstreamBillingProbeEnabled,
   probeUpstreamBilling,
   probeUpstreamBillingBatch,
+  getUpstreamBalance,
   getOllamaCloudUsageSettings,
   updateOllamaCloudUsageSettings,
   getOllamaCloudUsage,
