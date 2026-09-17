@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 const (
@@ -384,10 +386,41 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 	}
 	mu := s.openAIAccountRuntimeBlockLock(accountID)
 	mu.Lock()
-	defer mu.Unlock()
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
 	s.openaiOAuth429RetryStartedAt.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
+	mu.Unlock()
+}
+
+// ClearAccountTestSchedulingBlock treats a successful direct probe as evidence
+// for the tested model only. It clears the account-wide bridge block but keeps
+// unrelated model breakers isolated.
+func (s *OpenAIGatewayService) ClearAccountTestSchedulingBlock(ctx context.Context, accountID int64, model string) error {
+	model = strings.TrimSpace(model)
+	var canonicalModel string
+	if s.accountRepo != nil {
+		account, err := s.accountRepo.GetByID(ctx, accountID)
+		if err != nil {
+			return err
+		}
+		if model == "" {
+			model = openai.DefaultTestModel
+		}
+		canonicalModel = canonicalOpenAIAccountSchedulingModel(account, model)
+	}
+
+	s.ClearAccountSchedulingBlock(accountID)
+	if canonicalModel != "" {
+		s.clearOpenAIAccountModelTransientState(accountID, canonicalModel)
+	}
+	return nil
+}
+
+func (s *OpenAIGatewayService) RefreshRecoveredAccount(ctx context.Context, accountID int64) error {
+	if s == nil || s.schedulerSnapshot == nil {
+		return nil
+	}
+	return s.schedulerSnapshot.RefreshRecoveredAccount(ctx, accountID)
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/stretchr/testify/require"
 )
 
@@ -756,14 +757,38 @@ func TestOpenAIRuntimeBlock_DoesNotShortenExistingBlock(t *testing.T) {
 }
 
 func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	account := &Account{ID: 47, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	repo := &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{ID: 47, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	repo.accountsByID[account.ID] = account
 
 	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "429")
+	for range 3 {
+		svc.recordOpenAIAccountModelTransientFailure(account, "glm-5.2", time.Now())
+		svc.recordOpenAIAccountModelTransientFailure(account, "deepseek-v4.1-flash", time.Now())
+	}
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "glm-5.2"))
+	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "deepseek-v4.1-flash"))
 
-	svc.ClearAccountSchedulingBlock(account.ID)
+	require.NoError(t, svc.ClearAccountTestSchedulingBlock(context.Background(), account.ID, "glm-5.2"))
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.False(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "glm-5.2"))
+	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "deepseek-v4.1-flash"))
+}
+
+func TestOpenAIRuntimeBlock_ClearAccountTestSchedulingBlockUsesDefaultModel(t *testing.T) {
+	account := &Account{ID: 48, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	repo := &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{account.ID: account}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+
+	for range 3 {
+		svc.recordOpenAIAccountModelTransientFailure(account, openai.DefaultTestModel, time.Now())
+	}
+	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, openai.DefaultTestModel))
+
+	require.NoError(t, svc.ClearAccountTestSchedulingBlock(context.Background(), account.ID, ""))
+	require.False(t, svc.isOpenAIAccountModelRuntimeBlocked(account, openai.DefaultTestModel))
 }
 
 func TestRuntimeBlockHonorsClearedPersistedCooldown(t *testing.T) {

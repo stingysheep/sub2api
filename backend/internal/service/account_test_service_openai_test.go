@@ -28,6 +28,22 @@ type queuedHTTPUpstream struct {
 	tlsFlags  []bool
 }
 
+func TestAccountTestService_SuccessHookFailureReplacesCompletionEvent(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/test", nil)
+	c.Set(accountTestBeforeSuccessContextKey, &accountTestBeforeSuccessState{
+		hook: func(context.Context) error { return fmt.Errorf("snapshot refresh failed") },
+		ctx:  c.Request.Context(),
+	})
+
+	(&AccountTestService{}).sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+
+	require.Contains(t, recorder.Body.String(), `"type":"error"`)
+	require.Contains(t, recorder.Body.String(), "snapshot refresh failed")
+	require.NotContains(t, recorder.Body.String(), `"type":"test_complete"`)
+}
+
 func (u *queuedHTTPUpstream) Do(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
 	return nil, fmt.Errorf("unexpected Do call")
 }

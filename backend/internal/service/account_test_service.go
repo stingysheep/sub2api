@@ -70,6 +70,23 @@ type TestEvent struct {
 type AccountTestOptions struct {
 	ImageDataURL string
 	AudioDataURL string
+	// BeforeSuccess runs immediately before the successful SSE completion event.
+	// Returning an error replaces the completion event with an SSE error event.
+	BeforeSuccess func(context.Context) error
+}
+
+const accountTestBeforeSuccessContextKey = "account_test_before_success"
+
+type accountTestBeforeSuccessState struct {
+	once sync.Once
+	hook func(context.Context) error
+	ctx  context.Context
+	err  error
+}
+
+func (s *accountTestBeforeSuccessState) run() error {
+	s.once.Do(func() { s.err = s.hook(s.ctx) })
+	return s.err
 }
 
 func firstAccountTestOptions(opts []AccountTestOptions) AccountTestOptions {
@@ -334,6 +351,12 @@ func createTestPayload(modelID string) (map[string]any, error) {
 func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int64, modelID string, prompt string, mode string, opts ...AccountTestOptions) error {
 	ctx := c.Request.Context()
 	testOpts := firstAccountTestOptions(opts)
+	if testOpts.BeforeSuccess != nil {
+		c.Set(accountTestBeforeSuccessContextKey, &accountTestBeforeSuccessState{
+			hook: testOpts.BeforeSuccess,
+			ctx:  ctx,
+		})
+	}
 
 	// Get account
 	account, err := s.accountRepo.GetByID(ctx, accountID)
@@ -3221,6 +3244,13 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 
 func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 	if event.Type == "test_complete" {
+		if value, ok := c.Get(accountTestBeforeSuccessContextKey); ok {
+			if state, ok := value.(*accountTestBeforeSuccessState); ok {
+				if err := state.run(); err != nil {
+					event = TestEvent{Type: "error", Error: "account test passed but scheduling recovery failed: " + err.Error()}
+				}
+			}
+		}
 		if suppress, ok := c.Get(accountTestSuppressCompletionContextKey); ok {
 			if suppressCompletion, _ := suppress.(bool); suppressCompletion {
 				return

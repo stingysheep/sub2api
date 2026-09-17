@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -47,6 +48,14 @@ type RateLimitService struct {
 type AccountRuntimeBlocker interface {
 	BlockAccountScheduling(account *Account, until time.Time, reason string)
 	ClearAccountSchedulingBlock(accountID int64)
+}
+
+type successfulAccountTestRuntimeRecoverer interface {
+	ClearAccountTestSchedulingBlock(ctx context.Context, accountID int64, model string) error
+}
+
+type recoveredAccountSnapshotRefresher interface {
+	RefreshRecoveredAccount(ctx context.Context, accountID int64) error
 }
 
 // SuccessfulTestRecoveryResult 表示测试成功后恢复了哪些运行时状态。
@@ -2149,8 +2158,34 @@ func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID in
 
 // RecoverAccountAfterSuccessfulTest 将一次成功测试视为正常请求，
 // 按需恢复 error / rate-limit / overload / temp-unsched / model-rate-limit 等运行时状态。
-func (s *RateLimitService) RecoverAccountAfterSuccessfulTest(ctx context.Context, accountID int64) (*SuccessfulTestRecoveryResult, error) {
-	return s.RecoverAccountState(ctx, accountID, AccountRecoveryOptions{})
+func (s *RateLimitService) RecoverAccountAfterSuccessfulTest(ctx context.Context, accountID int64, testedModel ...string) (*SuccessfulTestRecoveryResult, error) {
+	result, err := s.RecoverAccountState(ctx, accountID, AccountRecoveryOptions{})
+	if err != nil {
+		return nil, err
+	}
+	model := ""
+	if len(testedModel) > 0 {
+		model = testedModel[0]
+	}
+	var recoveryErr error
+	if recoverer, ok := s.runtimeBlocker.(successfulAccountTestRuntimeRecoverer); ok {
+		recoveryErr = recoverer.ClearAccountTestSchedulingBlock(ctx, accountID, model)
+	} else if result != nil && !result.ClearedError && !result.ClearedRateLimit {
+		// Keep legacy blockers source-compatible while ensuring a successful probe
+		// still clears an account-wide process-local bridge block.
+		s.notifyAccountSchedulingBlockCleared(accountID)
+	}
+	if result != nil && (result.ClearedError || result.ClearedRateLimit) {
+		if refresher, ok := s.runtimeBlocker.(recoveredAccountSnapshotRefresher); ok {
+			if err := refresher.RefreshRecoveredAccount(ctx, accountID); err != nil {
+				recoveryErr = errors.Join(recoveryErr, err)
+			}
+		}
+	}
+	if recoveryErr != nil {
+		return result, recoveryErr
+	}
+	return result, nil
 }
 
 func (s *RateLimitService) ClearTempUnschedulable(ctx context.Context, accountID int64) error {

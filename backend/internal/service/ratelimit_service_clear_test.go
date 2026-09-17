@@ -72,6 +72,24 @@ type recoverTokenInvalidatorStub struct {
 	err      error
 }
 
+type successfulTestRuntimeRecorder struct {
+	runtimeBlockRecorder
+	testAccountID int64
+	testedModel   string
+	refreshIDs    []int64
+}
+
+func (r *successfulTestRuntimeRecorder) ClearAccountTestSchedulingBlock(_ context.Context, accountID int64, model string) error {
+	r.testAccountID = accountID
+	r.testedModel = model
+	return nil
+}
+
+func (r *successfulTestRuntimeRecorder) RefreshRecoveredAccount(_ context.Context, accountID int64) error {
+	r.refreshIDs = append(r.refreshIDs, accountID)
+	return nil
+}
+
 func (c *tempUnschedCacheRecorder) SetTempUnsched(ctx context.Context, accountID int64, state *TempUnschedState) error {
 	return nil
 }
@@ -249,7 +267,9 @@ func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NoRecoverableStateIs
 		},
 	}
 	cache := &tempUnschedCacheRecorder{}
+	blocker := &runtimeBlockRecorder{}
 	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, cache)
+	svc.SetAccountRuntimeBlocker(blocker)
 
 	result, err := svc.RecoverAccountAfterSuccessfulTest(context.Background(), 7)
 	require.NoError(t, err)
@@ -264,6 +284,40 @@ func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NoRecoverableStateIs
 	require.Equal(t, 0, repo.clearModelRateLimitCalls)
 	require.Equal(t, 0, repo.clearTempUnschedCalls)
 	require.Empty(t, cache.deletedIDs)
+	require.Equal(t, []int64{7}, blocker.clearedIDs)
+}
+
+func TestRateLimitService_RecoverAccountAfterSuccessfulTest_ClearsOnlyTestedRuntimeModelWithoutSnapshotRefresh(t *testing.T) {
+	repo := &rateLimitClearRepoStub{
+		getByIDAccount: &Account{ID: 8, Status: StatusActive, Schedulable: true},
+	}
+	blocker := &successfulTestRuntimeRecorder{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc.SetAccountRuntimeBlocker(blocker)
+
+	result, err := svc.RecoverAccountAfterSuccessfulTest(context.Background(), 8, "glm-5.2")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, int64(8), blocker.testAccountID)
+	require.Equal(t, "glm-5.2", blocker.testedModel)
+	require.Empty(t, blocker.refreshIDs)
+}
+
+func TestRateLimitService_RecoverAccountAfterSuccessfulTest_RefreshesSnapshotAfterDurableRecovery(t *testing.T) {
+	now := time.Now()
+	repo := &rateLimitClearRepoStub{
+		getByIDAccount: &Account{ID: 10, Status: StatusActive, Schedulable: true, RateLimitedAt: &now},
+	}
+	blocker := &successfulTestRuntimeRecorder{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc.SetAccountRuntimeBlocker(blocker)
+
+	result, err := svc.RecoverAccountAfterSuccessfulTest(context.Background(), 10, "glm-5.2")
+	require.NoError(t, err)
+	require.True(t, result.ClearedRateLimit)
+	require.Equal(t, int64(10), blocker.testAccountID)
+	require.Equal(t, "glm-5.2", blocker.testedModel)
+	require.Equal(t, []int64{10}, blocker.refreshIDs)
 }
 
 func TestRateLimitService_RecoverAccountAfterSuccessfulTest_ClearErrorFailed(t *testing.T) {

@@ -1357,6 +1357,12 @@ func (h *AccountHandler) Test(c *gin.Context) {
 		ImageDataURL: req.ImageDataURL,
 		AudioDataURL: req.AudioDataURL,
 	}
+	if h.rateLimitService != nil {
+		opts.BeforeSuccess = func(ctx context.Context) error {
+			_, err := h.rateLimitService.RecoverAccountAfterSuccessfulTest(ctx, accountID, req.ModelID)
+			return err
+		}
+	}
 
 	// Use AccountTestService to test the account with SSE streaming
 	if err := h.accountTestService.TestAccountConnection(c, accountID, req.ModelID, req.Prompt, req.Mode, opts); err != nil {
@@ -1364,11 +1370,6 @@ func (h *AccountHandler) Test(c *gin.Context) {
 		return
 	}
 
-	if h.rateLimitService != nil {
-		if _, err := h.rateLimitService.RecoverAccountAfterSuccessfulTest(c.Request.Context(), accountID); err != nil {
-			_ = c.Error(err)
-		}
-	}
 }
 
 // BatchTest runs bounded, sequential connection tests for selected accounts.
@@ -1414,6 +1415,10 @@ func (h *AccountHandler) BatchTest(c *gin.Context) {
 		item := batchTestResult{AccountID: accountID, ModelID: modelID, Result: result}
 		if testErr != nil {
 			item.Error = testErr.Error()
+		} else if result != nil && result.Status == "success" && h.rateLimitService != nil {
+			if _, recoveryErr := h.rateLimitService.RecoverAccountAfterSuccessfulTest(c.Request.Context(), accountID, modelID); recoveryErr != nil {
+				item.Error = "account test passed but scheduling recovery failed: " + recoveryErr.Error()
+			}
 		}
 		results = append(results, item)
 	}
