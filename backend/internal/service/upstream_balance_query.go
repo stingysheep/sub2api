@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -29,7 +30,8 @@ type UpstreamBalanceEntry struct {
 }
 
 // UpstreamBalanceQueryResult is deliberately credential-free. It is suitable for
-// direct delivery to the administrator UI and is never persisted or logged.
+// direct delivery to the administrator UI. Successful numeric observations are also
+// persisted as a sanitized snapshot for read-only operations diagnostics.
 type UpstreamBalanceQueryResult struct {
 	Entries    []UpstreamBalanceEntry `json:"entries"`
 	Provider   string                 `json:"provider"`
@@ -38,8 +40,11 @@ type UpstreamBalanceQueryResult struct {
 }
 
 const (
-	upstreamBalanceQueryTimeout  = 10 * time.Second
-	upstreamBalanceQueryMaxBytes = 64 * 1024
+	upstreamBalanceQueryTimeout     = 10 * time.Second
+	upstreamBalanceQueryMaxBytes    = 64 * 1024
+	upstreamBalancePersistTimeout   = 2 * time.Second
+	upstreamBalanceSnapshotExtraKey = "upstream_balance_snapshot"
+	upstreamBalanceSnapshotVersion  = 1
 )
 
 var errUpstreamBalanceUnavailable = errors.New("upstream balance query is unavailable")
@@ -47,6 +52,27 @@ var errUpstreamBalanceUnavailable = errors.New("upstream balance query is unavai
 type upstreamBalanceCandidate struct {
 	provider string
 	path     string
+}
+
+type upstreamBalanceSnapshotStore interface {
+	UpdateExtra(ctx context.Context, id int64, updates map[string]any) error
+}
+
+type upstreamBalanceSnapshot struct {
+	SchemaVersion int                            `json:"schema_version"`
+	Provider      string                         `json:"provider"`
+	FetchedAt     time.Time                      `json:"fetched_at"`
+	StatusCode    int                            `json:"status_code"`
+	Entries       []upstreamBalanceSnapshotEntry `json:"entries"`
+}
+
+type upstreamBalanceSnapshotEntry struct {
+	PlanName  string   `json:"plan_name,omitempty"`
+	Remaining *float64 `json:"remaining,omitempty"`
+	Total     *float64 `json:"total,omitempty"`
+	Used      *float64 `json:"used,omitempty"`
+	Unit      string   `json:"unit,omitempty"`
+	IsValid   bool     `json:"is_valid"`
 }
 
 // QueryUpstreamBalance fetches a live, read-only balance from an API-key account.
@@ -95,6 +121,7 @@ func (s *AccountTestService) QueryUpstreamBalance(ctx context.Context, account *
 			return nil, err
 		}
 		if !retry {
+			persistUpstreamBalanceSnapshot(ctx, s.accountRepo, account, result)
 			return result, nil
 		}
 		lastResult = result
@@ -108,6 +135,44 @@ func (s *AccountTestService) QueryUpstreamBalance(ctx context.Context, account *
 		Provider:  "generic",
 		FetchedAt: time.Now().UTC(),
 	}, nil
+}
+
+// persistUpstreamBalanceSnapshot stores only normalized numeric observations.
+// Authentication failures, schema mismatches, URLs, credentials, raw response bodies,
+// and upstream-provided error text never enter the snapshot.
+func persistUpstreamBalanceSnapshot(ctx context.Context, store upstreamBalanceSnapshotStore, account *Account, result *UpstreamBalanceQueryResult) {
+	if store == nil || account == nil || result == nil || result.StatusCode < 200 || result.StatusCode >= 300 {
+		return
+	}
+	entries := make([]upstreamBalanceSnapshotEntry, 0, len(result.Entries))
+	for _, entry := range result.Entries {
+		if entry.Remaining == nil && entry.Total == nil && entry.Used == nil {
+			continue
+		}
+		entries = append(entries, upstreamBalanceSnapshotEntry{
+			PlanName:  truncate(strings.TrimSpace(entry.PlanName), 128),
+			Remaining: entry.Remaining,
+			Total:     entry.Total,
+			Used:      entry.Used,
+			Unit:      truncate(strings.ToUpper(strings.TrimSpace(entry.Unit)), 16),
+			IsValid:   entry.IsValid,
+		})
+	}
+	if len(entries) == 0 {
+		return
+	}
+	snapshot := upstreamBalanceSnapshot{
+		SchemaVersion: upstreamBalanceSnapshotVersion,
+		Provider:      truncate(strings.ToLower(strings.TrimSpace(result.Provider)), 32),
+		FetchedAt:     result.FetchedAt.UTC(),
+		StatusCode:    result.StatusCode,
+		Entries:       entries,
+	}
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), upstreamBalancePersistTimeout)
+	defer cancel()
+	if err := store.UpdateExtra(persistCtx, account.ID, map[string]any{upstreamBalanceSnapshotExtraKey: snapshot}); err != nil {
+		slog.Warn("upstream_balance_snapshot_persist_failed", "account_id", account.ID, "provider", snapshot.Provider)
+	}
 }
 
 func (s *AccountTestService) queryUpstreamBalanceCandidate(

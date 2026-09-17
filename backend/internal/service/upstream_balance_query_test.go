@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -15,6 +16,18 @@ import (
 type upstreamBalanceHTTPStub struct {
 	responses []*http.Response
 	requests  []*http.Request
+}
+
+type upstreamBalanceSnapshotRepoStub struct {
+	AccountRepository
+	accountID int64
+	updates   map[string]any
+}
+
+func (s *upstreamBalanceSnapshotRepoStub) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
+	s.accountID = id
+	s.updates = updates
+	return nil
 }
 
 func (s *upstreamBalanceHTTPStub) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
@@ -64,6 +77,44 @@ func TestQueryUpstreamBalanceCCSwitchUsageResponse(t *testing.T) {
 	require.Equal(t, "Bearer do-not-return-this-key", upstream.requests[0].Header.Get("Authorization"))
 	require.True(t, HTTPUpstreamRedirectsDisabled(upstream.requests[0].Context()))
 	require.True(t, HTTPUpstreamPublicHostsOnly(upstream.requests[0].Context()))
+}
+
+func TestQueryUpstreamBalancePersistsOnlySanitizedNumericSnapshot(t *testing.T) {
+	repo := &upstreamBalanceSnapshotRepoStub{}
+	upstream := &upstreamBalanceHTTPStub{responses: []*http.Response{
+		upstreamBalanceResponse(http.StatusOK, `{"planName":"pro","isValid":true,"unit":"usd","quota":{"limit":20,"used":5,"remaining":15}}`),
+	}}
+	service := newUpstreamBalanceTestService(upstream)
+	service.accountRepo = repo
+	result, err := service.QueryUpstreamBalance(context.Background(), upstreamBalanceTestAccount("https://relay.ccswitch.example/v1"))
+	require.NoError(t, err)
+	require.Len(t, result.Entries, 1)
+	require.Equal(t, int64(73), repo.accountID)
+	snapshot, ok := repo.updates[upstreamBalanceSnapshotExtraKey].(upstreamBalanceSnapshot)
+	require.True(t, ok)
+	require.Equal(t, upstreamBalanceSnapshotVersion, snapshot.SchemaVersion)
+	require.Equal(t, "sub2api", snapshot.Provider)
+	require.Equal(t, http.StatusOK, snapshot.StatusCode)
+	require.Len(t, snapshot.Entries, 1)
+	require.Equal(t, "USD", snapshot.Entries[0].Unit)
+	require.Equal(t, 15.0, *snapshot.Entries[0].Remaining)
+	encoded, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "api_key")
+	require.NotContains(t, string(encoded), "base_url")
+	require.NotContains(t, string(encoded), "do-not-return-this-key")
+}
+
+func TestQueryUpstreamBalanceDoesNotReplaceSnapshotOnAuthenticationFailure(t *testing.T) {
+	repo := &upstreamBalanceSnapshotRepoStub{}
+	upstream := &upstreamBalanceHTTPStub{responses: []*http.Response{
+		upstreamBalanceResponse(http.StatusUnauthorized, `{"error":"credential rejected"}`),
+	}}
+	service := newUpstreamBalanceTestService(upstream)
+	service.accountRepo = repo
+	_, err := service.QueryUpstreamBalance(context.Background(), upstreamBalanceTestAccount("https://relay.example/v1"))
+	require.NoError(t, err)
+	require.Nil(t, repo.updates)
 }
 
 func TestQueryUpstreamBalanceRetriesOnlyForSchemaMismatch(t *testing.T) {

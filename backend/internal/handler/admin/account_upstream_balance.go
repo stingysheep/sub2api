@@ -8,7 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// QueryUpstreamBalance fetches a live, non-persisted balance from an API-key upstream.
+// QueryUpstreamBalance fetches a live balance from an API-key upstream. The service
+// persists only its sanitized numeric snapshot for read-only operations diagnostics.
 // POST /api/v1/admin/accounts/:id/upstream-balance
 func (h *AccountHandler) QueryUpstreamBalance(c *gin.Context) {
 	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
