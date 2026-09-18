@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +12,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGeneratedWireIncludesShepRuntimeWiring(t *testing.T) {
+	generated, err := os.ReadFile("wire_gen.go")
+	require.NoError(t, err)
+	require.Contains(t, string(generated), ":= provideShepRuntimeWiring(gatewayService, openAIGatewayService, affiliateService, usageHandler, dashboardService)")
+}
 
 func TestProvideServiceBuildInfo(t *testing.T) {
 	in := handler.BuildInfo{
@@ -116,6 +123,7 @@ func minimalDependencyCleanup(usageBillingRepo service.UsageBillingRepository, u
 	return provideCleanup(
 		nil, // entClient
 		usageBillingRepo,
+		shepRuntimeWiring{},
 		nil, // redis
 		&service.OpsMetricsCollector{},
 		&service.OpsAggregationService{},

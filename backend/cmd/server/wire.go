@@ -31,6 +31,11 @@ type Application struct {
 	Cleanup       func()
 }
 
+// shepRuntimeWiring makes custom runtime-only dependencies explicit to Wire.
+// Keeping these links in a provider prevents wire_gen.go regeneration from
+// silently dropping affiliate accrual and the user ranking dashboard service.
+type shepRuntimeWiring struct{}
+
 func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	wire.Build(
 		// Infrastructure layer ProviderSets
@@ -55,6 +60,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		providePluginHostInfo,
 
 		// Cleanup function provider
+		provideShepRuntimeWiring,
 		provideCleanup,
 
 		// Application struct
@@ -81,9 +87,24 @@ func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {
 	}
 }
 
+func provideShepRuntimeWiring(
+	gateway *service.GatewayService,
+	openAIGateway *service.OpenAIGatewayService,
+	affiliate *service.AffiliateService,
+	usageHandler *handler.UsageHandler,
+	dashboard *service.DashboardService,
+) shepRuntimeWiring {
+	gateway.SetAffiliateService(affiliate)
+	openAIGateway.SetAffiliateService(affiliate)
+	affiliate.SetConsumptionRebateMode(true)
+	usageHandler.SetDashboardService(dashboard)
+	return shepRuntimeWiring{}
+}
+
 func provideCleanup(
 	entClient *ent.Client,
 	usageBillingRepo service.UsageBillingRepository,
+	_ shepRuntimeWiring,
 	rdb *redis.Client,
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAggregation *service.OpsAggregationService,
